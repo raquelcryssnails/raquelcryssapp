@@ -1,0 +1,21 @@
+{
+  "name": "NailStudio AI",
+  "short_name": "NailStudio",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fff",
+  "theme_color": "#E62E7B",
+  "description": "Sistema de Gestão Inteligente para Salões de Beleza",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
