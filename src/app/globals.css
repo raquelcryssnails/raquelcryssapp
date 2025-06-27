@@ -125,6 +125,9 @@
    .text-gradient {
     @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent;
   }
+  .animate-horizontal-spin {
+    animation: horizontal-spin 3s linear infinite;
+  }
 }
 
 @keyframes heartbeat {
@@ -165,5 +168,14 @@
   }
   100% {
     background-position: 0% 50%;
+  }
+}
+
+@keyframes horizontal-spin {
+  from {
+    transform: rotateY(0deg);
+  }
+  to {
+    transform: rotateY(360deg);
   }
 }
