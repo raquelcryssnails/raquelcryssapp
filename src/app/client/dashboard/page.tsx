@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from "react";
@@ -290,7 +289,7 @@ export default function ClientDashboardPage() {
                                         );
                                         iconComponent = <Heart className={cn("h-5 w-5", cardColorPalette.accentText, cardColorPalette.heartFill)} />;
                                     } else {
-                                        iconComponent = <Paintbrush2 className={cn("h-5 w-5", cardColorPalette.pawFill)} />;
+                                        iconComponent = <Heart className={cn("h-5 w-5 animate-horizontal-spin", cardColorPalette.pawFill)} />;
                                     }
                                 } else {
                                     slotClasses = cn(
