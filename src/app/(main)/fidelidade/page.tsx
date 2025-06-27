@@ -251,7 +251,7 @@ export default function FidelidadePage() {
                                   slotClasses = cn(slotClasses, palette.border.replace('border-', 'border-').replace('-500', '-600'), "ring-1", palette.border.replace('border-','ring-'), "ring-offset-0 animate-pulse");
                                   iconComponent = <Heart className={cn("h-4 w-4", palette.accentText, palette.heartFill)} />;
                               } else {
-                                  iconComponent = <Paintbrush2 className={cn("h-4 w-4", palette.pawFill)} />;
+                                  iconComponent = <Heart className={cn("h-4 w-4 animate-horizontal-spin", palette.pawFill)} />;
                               }
                             } else {
                               slotClasses = cn(slotClasses, "bg-gray-50 dark:bg-gray-800/30 border-gray-300 dark:border-gray-700 border-dashed");
