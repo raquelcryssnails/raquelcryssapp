@@ -165,6 +165,25 @@ export interface ClientNotification {
   createdAt: string | Timestamp;
 }
 
+export interface Conversation {
+  id: string; // The doc ID, same as clientId
+  clientId: string;
+  clientName: string;
+  lastMessage: string;
+  lastMessageTimestamp: string | Timestamp;
+  unreadByAdmin: boolean;
+  unreadByClient: boolean;
+}
+
+export interface Message {
+  id: string;
+  conversationId: string;
+  senderId: 'admin' | string; // 'admin' or clientId
+  senderType: 'admin' | 'client';
+  text: string;
+  createdAt: string | Timestamp;
+}
+
 
 // Keep Expense type for backward compatibility if needed, or gradually phase out.
 // For now, we'll focus on using FinancialTransaction.
