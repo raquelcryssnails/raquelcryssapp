@@ -1,5 +1,4 @@
-
-'use server';
+import { db } from '@/lib/firebase/config';
 import type {
   Appointment,
   Client,
@@ -13,6 +12,8 @@ import type {
   Product,
   Notification,
   ClientNotification,
+  Conversation,
+  Message,
 } from '@/types/firestore';
 import {
   collection,
@@ -31,19 +32,9 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 
-// Attempt to import db from the config file
-let db: any; // Firestore Database instance
-try {
-  // This line assumes 'db' is exported from your firebase config
-  db = require('@/lib/firebase/config').db;
-} catch (e: any) {
-  console.warn(
-    'Firebase config not found or db not exported from it. Firestore functionality will be mocked. Error: ' + e.message
-  );
-}
 
 // Helper to convert Firestore doc to our data type
-const fromFirestore = <T extends { id: string }>(
+export const fromFirestore = <T extends { id: string }>(
   snapshot: any, // Firestore DocumentSnapshot
   options?: any // SnapshotOptions
 ): T => {
@@ -58,13 +49,15 @@ const fromFirestore = <T extends { id: string }>(
     result.mimosRedeemed = 0;
   }
 
-
   // Convert Timestamps to ISO strings if they exist and are Timestamps
   if (data?.createdAt && data.createdAt instanceof Timestamp) {
     result.createdAt = data.createdAt.toDate().toISOString();
   }
   if (data?.updatedAt && data.updatedAt instanceof Timestamp) {
     result.updatedAt = data.updatedAt.toDate().toISOString();
+  }
+  if (data?.lastMessageTimestamp && data.lastMessageTimestamp instanceof Timestamp) {
+    result.lastMessageTimestamp = data.lastMessageTimestamp.toDate().toISOString();
   }
   // Handle specific date fields that might be Timestamps
   if (data?.date && data.date instanceof Timestamp) { // For Appointment.date or FinancialTransaction.date
@@ -103,10 +96,6 @@ const APP_CONFIG_COLLECTION = 'appConfiguration';
 const MAIN_SETTINGS_DOC_ID = 'mainSettings';
 
 export const getAppSettingsFS = async (): Promise<AppSettings | null> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking getAppSettingsFS operation, returning null.');
-    return null;
-  }
   try {
     const docRef = doc(db, APP_CONFIG_COLLECTION, MAIN_SETTINGS_DOC_ID);
     const docSnap = await getDoc(docRef);
@@ -142,10 +131,6 @@ export const getAppSettingsFS = async (): Promise<AppSettings | null> => {
 };
 
 export const saveAppSettingsFS = async (settings: Partial<AppSettings>): Promise<void> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking saveAppSettingsFS operation.');
-    return Promise.resolve();
-  }
   try {
     const settingsDocRef = doc(db, APP_CONFIG_COLLECTION, MAIN_SETTINGS_DOC_ID);
     const dataToSave: Partial<AppSettings> & { updatedAt?: any } = { ...settings, updatedAt: serverTimestamp() };
@@ -173,20 +158,10 @@ export const saveAppSettingsFS = async (settings: Partial<AppSettings>): Promise
 
 // ========== Admin Status Check ==========
 export const checkAdminStatusFS = async (uid: string): Promise<boolean> => {
-  if (!db) {
-    console.warn(`Firestore not initialized. Mocking checkAdminStatusFS for UID: ${uid}, returning false.`);
-    // In a real app, if db isn't available, you'd likely deny admin status.
-    // For testing without Firebase, you might hardcode a specific mock UID to be admin.
-    // Example: if (uid === 'mock-admin-uid') return true;
-    return false;
-  }
   try {
     const adminDocRef = doc(db, 'admins', uid);
     const docSnap = await getDoc(adminDocRef);
     if (docSnap.exists()) {
-      // Check for a specific field, e.g., `isAdmin: true` or `role: 'admin'`
-      // For this example, we'll assume if the document exists in 'admins' collection, they are an admin.
-      // More robust: return docSnap.data()?.isAdmin === true;
       return true; 
     }
     return false; // User document does not exist in 'admins' collection
@@ -202,20 +177,6 @@ export const checkAdminStatusFS = async (uid: string): Promise<boolean> => {
 export const addClientFS = async (
   clientData: Omit<Client, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<Client> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking addClientFS operation.');
-    const mockId = `mock_client_${Date.now()}`;
-    const now = new Date().toISOString();
-    return {
-      id: mockId,
-      ...clientData,
-      stampsEarned: clientData.stampsEarned || 0,
-      mimosRedeemed: clientData.mimosRedeemed || 0,
-      purchasedPackages: clientData.purchasedPackages || [],
-      createdAt: now,
-      updatedAt: now,
-    };
-  }
   const dataToSave = {
     ...clientData,
     stampsEarned: clientData.stampsEarned || 0,
@@ -226,30 +187,15 @@ export const addClientFS = async (
   };
   const docRef = await addDoc(collection(db, 'clients'), dataToSave);
   const docSnap = await getDoc(docRef); 
-  // No notification for new client as requested in a previous step
-  // await addNotificationFS({
-  //   title: 'Novo Cliente Cadastrado',
-  //   description: `O cliente ${clientData.name} foi adicionado.`,
-  //   type: 'info',
-  //   linkTo: `/clientes`
-  // });
   return fromFirestore<Client>(docSnap);
 };
 
 export const getClientsFS = async (): Promise<Client[]> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking getClientsFS operation, returning empty array.');
-    return [];
-  }
   const querySnapshot = await getDocs(collection(db, 'clients'));
   return querySnapshot.docs.map((doc) => fromFirestore<Client>(doc));
 };
 
 export const getClientFS = async (id: string): Promise<Client | null> => {
-  if (!db) {
-    console.warn(`Firestore not initialized. Mocking getClientFS for ID: ${id}, returning null.`);
-    return null;
-  }
    const docRef = doc(db, "clients", id);
    const docSnap = await getDoc(docRef);
    return docSnap.exists() ? fromFirestore<Client>(docSnap) : null;
@@ -259,15 +205,6 @@ export const updateClientFS = async (
   id: string,
   data: Partial<Omit<Client, 'id' | 'createdAt'>>
 ): Promise<void> => {
-  if (!db) {
-    console.warn(`Firestore not initialized. Mocking updateClientFS operation for ID: ${id}.`);
-    const localClients = await getClientsFS(); 
-    const clientIndex = localClients.findIndex(c => c.id === id);
-    if (clientIndex > -1) {
-        console.log(`Mocked updateClientFS for ${id} with data:`, data);
-    }
-    return Promise.resolve();
-  }
   const clientDoc = doc(db, 'clients', id);
   const dataToUpdate: any = { ...data, updatedAt: serverTimestamp() };
   if (data.purchasedPackages) {
@@ -281,10 +218,6 @@ export const updateClientFS = async (
 };
 
 export const deleteClientFS = async (id: string): Promise<void> => {
-  if (!db) {
-    console.warn(`Firestore not initialized. Mocking deleteClientFS operation for ID: ${id}.`);
-    return Promise.resolve();
-  }
   const clientDoc = doc(db, 'clients', id);
   await deleteDoc(clientDoc);
 };
@@ -295,18 +228,6 @@ export const deleteClientFS = async (id: string): Promise<void> => {
 export const addServiceFS = async (
   serviceData: Omit<SalonService, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<SalonService> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking addServiceFS operation.');
-    const mockId = `mock_service_${Date.now()}`;
-    const now = new Date().toISOString();
-    return {
-      id: mockId,
-      ...serviceData,
-      price: String(serviceData.price).replace(',', '.'),
-      createdAt: now,
-      updatedAt: now
-    };
-  }
   const dataToSave = {
     ...serviceData,
     price: String(serviceData.price).replace(',', '.'),
@@ -319,14 +240,6 @@ export const addServiceFS = async (
 };
 
 export const getServicesFS = async (): Promise<SalonService[]> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking getServicesFS operation, returning default mock services.');
-    return [ 
-        { id: "mockServiceId1", name: "Manicure Simples (Mock)", duration: "45 min", price: "35.00", category: "Mãos", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { id: "mockServiceId2", name: "Pedicure Completa (Mock)", duration: "60 min", price: "45.00", category: "Pés", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-        { id: "mockServiceId3", name: "Spa dos Pés (Mock)", duration: "75 min", price: "60.00", category: "Pés", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-    ];
-  }
   const querySnapshot = await getDocs(collection(db, 'services'));
   return querySnapshot.docs.map((doc) => fromFirestore<SalonService>(doc));
 };
@@ -335,10 +248,6 @@ export const updateServiceFS = async (
   id: string,
   data: Partial<Omit<SalonService, 'id' | 'createdAt'>>
 ): Promise<void> => {
-  if (!db) {
-    console.warn(`Firestore not initialized. Mocking updateServiceFS operation for ID: ${id}.`);
-    return Promise.resolve();
-  }
   const serviceDoc = doc(db, 'services', id);
   const updateData: Partial<SalonService> & { updatedAt?: any } = { ...data, updatedAt: serverTimestamp() };
   if (data.price) {
@@ -348,10 +257,6 @@ export const updateServiceFS = async (
 };
 
 export const deleteServiceFS = async (id: string): Promise<void> => {
-  if (!db) {
-    console.warn(`Firestore not initialized. Mocking deleteServiceFS operation for ID: ${id}.`);
-    return Promise.resolve();
-  }
   const serviceDoc = doc(db, 'services', id);
   await deleteDoc(serviceDoc);
 };
@@ -362,17 +267,6 @@ export const deleteServiceFS = async (id: string): Promise<void> => {
 export const addAppointmentFS = async (
   appointmentData: Omit<Appointment, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<Appointment> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking addAppointmentFS operation.');
-    const mockId = `mock_appt_${Date.now()}`;
-    const now = new Date().toISOString();
-    return {
-      id: mockId,
-      ...appointmentData,
-      createdAt: now,
-      updatedAt: now
-    };
-  }
   const dataToSave = {
     ...appointmentData,
     date: appointmentData.date, // Already YYYY-MM-DD string
@@ -385,11 +279,6 @@ export const addAppointmentFS = async (
 };
 
 export const getAppointmentsFS = async (): Promise<Appointment[]> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking getAppointmentsFS operation, returning empty array.');
-    return [];
-  }
-
   const q = query(collection(db, 'appointments'));
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map((doc) => fromFirestore<Appointment>(doc));
@@ -400,19 +289,11 @@ export const updateAppointmentFS = async (
   id: string,
   data: Partial<Omit<Appointment, 'id' | 'createdAt'>>
 ): Promise<void> => {
-  if (!db) {
-    console.warn(`Firestore not initialized. Mocking updateAppointmentFS operation for ID: ${id}.`);
-    return Promise.resolve();
-  }
   const appointmentDoc = doc(db, 'appointments', id);
   await updateDoc(appointmentDoc, { ...data, updatedAt: serverTimestamp() });
 };
 
 export const deleteAppointmentFS = async (id: string): Promise<void> => {
-  if (!db) {
-    console.warn(`Firestore not initialized. Mocking deleteAppointmentFS operation for ID: ${id}.`);
-    return Promise.resolve();
-  }
   const appointmentDoc = doc(db, 'appointments', id);
   await deleteDoc(appointmentDoc);
 };
@@ -422,19 +303,6 @@ export const deleteAppointmentFS = async (id: string): Promise<void> => {
 export const addPackageFS = async (
   packageData: Omit<SalonPackage, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<SalonPackage> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking addPackageFS operation.');
-    const mockId = `mock_package_${Date.now()}`;
-    const now = new Date().toISOString();
-    return {
-      id: mockId,
-      ...packageData,
-      price: String(packageData.price).replace(',', '.'),
-      originalPrice: packageData.originalPrice ? String(packageData.originalPrice).replace(',', '.') : undefined,
-      createdAt: now,
-      updatedAt: now
-    };
-  }
   const dataToSave = {
     ...packageData,
     price: String(packageData.price).replace(',', '.'),
@@ -448,27 +316,6 @@ export const addPackageFS = async (
 };
 
 export const getPackagesFS = async (): Promise<SalonPackage[]> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking getPackagesFS operation, returning default mock packages.');
-     return [
-      {
-        id: "mock_pkg_fs_1",
-        name: "Pacote Essencial FS (Mock)",
-        shortDescription: "4x Manicure + 2x Pedicure.",
-        services: [ { serviceId: "mockServiceId1", quantity: 4 }, { serviceId: "mockServiceId2", quantity: 2 } ],
-        price: "167.00", originalPrice: "220.00", validityDays: 90, status: "Ativo", themeColor: "accent",
-        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      },
-      {
-        id: "mock_pkg_fs_2",
-        name: "Pacote Pedicure Premium FS (Mock)",
-        shortDescription: "4 sessões de pedicure premium.",
-        services: [{ serviceId: "mockServiceId2", quantity: 4 }],
-        price: "130.00", originalPrice: "160.00", validityDays: 60, status: "Ativo", themeColor: "primary",
-        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      },
-    ];
-  }
   const querySnapshot = await getDocs(collection(db, 'packages'));
   return querySnapshot.docs.map((doc) => fromFirestore<SalonPackage>(doc));
 };
@@ -477,10 +324,6 @@ export const updatePackageFS = async (
   id: string,
   data: Partial<Omit<SalonPackage, 'id' | 'createdAt'>>
 ): Promise<void> => {
-  if (!db) {
-    console.warn(`Firestore not initialized. Mocking updatePackageFS operation for ID: ${id}.`);
-    return Promise.resolve();
-  }
   const packageDoc = doc(db, 'packages', id);
   const updateData: any = { ...data, updatedAt: serverTimestamp() };
   if (data.price) {
@@ -493,10 +336,6 @@ export const updatePackageFS = async (
 };
 
 export const deletePackageFS = async (id: string): Promise<void> => {
-  if (!db) {
-    console.warn(`Firestore not initialized. Mocking deletePackageFS operation for ID: ${id}.`);
-    return Promise.resolve();
-  }
   const packageDoc = doc(db, 'packages', id);
   await deleteDoc(packageDoc);
 };
@@ -506,18 +345,6 @@ export const deletePackageFS = async (id: string): Promise<void> => {
 export const addProfessionalFS = async (
   professionalData: Omit<Professional, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<Professional> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking addProfessionalFS operation.');
-    const mockId = `mock_professional_${Date.now()}`;
-    const now = new Date().toISOString();
-    return { 
-      id: mockId, 
-      ...professionalData, 
-      commissionRate: professionalData.commissionRate === undefined ? null : Number(professionalData.commissionRate),
-      createdAt: now, 
-      updatedAt: now 
-    };
-  }
   const dataToSave = { 
     ...professionalData,
     commissionRate: professionalData.commissionRate === undefined || professionalData.commissionRate === null ? null : Number(professionalData.commissionRate),
@@ -530,23 +357,11 @@ export const addProfessionalFS = async (
 };
 
 export const getProfessionalsFS = async (): Promise<Professional[]> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking getProfessionalsFS operation, returning empty array.');
-    return [];
-  }
   const querySnapshot = await getDocs(collection(db, 'professionals'));
   return querySnapshot.docs.map((doc) => fromFirestore<Professional>(doc));
 };
 
 export const getProfessionalFS = async (id: string): Promise<Professional | null> => {
-  if (!db) {
-    console.warn(`Firestore not initialized. Mocking getProfessionalFS for ID: ${id}, returning null.`);
-    // Example mock response for a specific ID if needed for testing
-    // if (id === "mockProfessionalId1") {
-    //   return { id: "mockProfessionalId1", name: "Mock Professional", specialty: "Mock Specialty", commissionRate: 10, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-    // }
-    return null;
-  }
   const docRef = doc(db, 'professionals', id);
   const docSnap = await getDoc(docRef);
   return docSnap.exists() ? fromFirestore<Professional>(docSnap) : null;
@@ -556,10 +371,6 @@ export const updateProfessionalFS = async (
   id: string,
   data: Partial<Omit<Professional, 'id' | 'createdAt'>>
 ): Promise<void> => {
-  if (!db) {
-    console.warn(`Firestore not initialized. Mocking updateProfessionalFS operation for ID: ${id}.`);
-    return Promise.resolve();
-  }
   const professionalDoc = doc(db, 'professionals', id);
   const dataToUpdate: Partial<Professional> & { updatedAt?: any } = { ...data, updatedAt: serverTimestamp() };
   if (data.hasOwnProperty('commissionRate')) {
@@ -569,10 +380,6 @@ export const updateProfessionalFS = async (
 };
 
 export const deleteProfessionalFS = async (id: string): Promise<void> => {
-  if (!db) {
-    console.warn(`Firestore not initialized. Mocking deleteProfessionalFS operation for ID: ${id}.`);
-    return Promise.resolve();
-  }
   const professionalDoc = doc(db, 'professionals', id);
   await deleteDoc(professionalDoc);
 };
@@ -583,19 +390,6 @@ export const deleteProfessionalFS = async (id: string): Promise<void> => {
 export const addFinancialTransactionFS = async (
   transactionData: Omit<FinancialTransaction, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<FinancialTransaction> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking addFinancialTransactionFS operation.');
-    const mockId = `mock_transaction_${Date.now()}`;
-    const now = new Date().toISOString();
-    return {
-      id: mockId,
-      ...transactionData,
-      amount: String(transactionData.amount).replace(',', '.'),
-      date: transactionData.date, // YYYY-MM-DD string
-      createdAt: now,
-      updatedAt: now
-    };
-  }
   const dataToSave = {
     ...transactionData,
     amount: String(transactionData.amount).replace(',', '.'),
@@ -609,10 +403,6 @@ export const addFinancialTransactionFS = async (
 };
 
 export const getFinancialTransactionsFS = async (): Promise<FinancialTransaction[]> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking getFinancialTransactionsFS operation, returning empty array.');
-    return [];
-  }
   const q = query(collection(db, 'financialTransactions')); // Changed collection name
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map((doc) => fromFirestore<FinancialTransaction>(doc));
@@ -623,20 +413,6 @@ export const getFinancialTransactionsFS = async (): Promise<FinancialTransaction
 export const addProductFS = async (
   productData: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<Product> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking addProductFS operation.');
-    const mockId = `mock_product_${Date.now()}`;
-    const now = new Date().toISOString();
-    return {
-      id: mockId,
-      ...productData,
-      costPrice: productData.costPrice ? String(productData.costPrice).replace(',', '.') : undefined,
-      sellingPrice: productData.sellingPrice ? String(productData.sellingPrice).replace(',', '.') : undefined,
-      lastRestockDate: productData.lastRestockDate || undefined,
-      createdAt: now,
-      updatedAt: now,
-    };
-  }
   const dataToSave = {
     ...productData,
     stock: Number(productData.stock) || 0,
@@ -653,10 +429,6 @@ export const addProductFS = async (
 };
 
 export const getProductsFS = async (): Promise<Product[]> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking getProductsFS operation, returning empty array.');
-    return [];
-  }
   const querySnapshot = await getDocs(collection(db, 'products'));
   return querySnapshot.docs.map((doc) => fromFirestore<Product>(doc));
 };
@@ -665,10 +437,6 @@ export const updateProductFS = async (
   id: string,
   data: Partial<Omit<Product, 'id' | 'createdAt'>>
 ): Promise<void> => {
-  if (!db) {
-    console.warn(`Firestore not initialized. Mocking updateProductFS operation for ID: ${id}.`);
-    return Promise.resolve();
-  }
   const productDoc = doc(db, 'products', id);
   const docSnap = await getDoc(productDoc);
   if (!docSnap.exists()) {
@@ -709,19 +477,11 @@ export const updateProductFS = async (
 };
 
 export const deleteProductFS = async (id: string): Promise<void> => {
-  if (!db) {
-    console.warn(`Firestore not initialized. Mocking deleteProductFS operation for ID: ${id}.`);
-    return Promise.resolve();
-  }
   const productDoc = doc(db, 'products', id);
   await deleteDoc(productDoc);
 };
 
 export const clearAllFinancialTransactionsFS = async (): Promise<{ success: boolean, deletedCount: number, error?: string }> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking clearAllFinancialTransactionsFS operation.');
-    return { success: true, deletedCount: 0, error: "Firestore not initialized (mocked operation)" };
-  }
   try {
     console.log('Attempting to clear all financial transactions...');
     const transactionsCollectionRef = collection(db, 'financialTransactions');
@@ -742,10 +502,6 @@ export const clearAllFinancialTransactionsFS = async (): Promise<{ success: bool
 };
 
 export const clearAllAppointmentsFS = async (): Promise<{ success: boolean, deletedCount: number, error?: string }> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking clearAllAppointmentsFS operation.');
-    return { success: true, deletedCount: 0, error: "Firestore not initialized (mocked operation)" };
-  }
   try {
     console.log('Attempting to clear all appointments...');
     const appointmentsCollectionRef = collection(db, 'appointments');
@@ -770,10 +526,6 @@ export const clearAllAppointmentsFS = async (): Promise<{ success: boolean, dele
 export const addNotificationFS = async (
   notificationData: Omit<Notification, 'id' | 'createdAt' | 'read'>
 ): Promise<void> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking addNotificationFS.');
-    return;
-  }
   const dataToSave = {
     ...notificationData,
     read: false,
@@ -783,29 +535,17 @@ export const addNotificationFS = async (
 };
 
 export const getNotificationsFS = async (): Promise<Notification[]> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking getNotificationsFS.');
-    return [];
-  }
   const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'));
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map((doc) => fromFirestore<Notification>(doc));
 };
 
 export const markNotificationAsReadFS = async (id: string): Promise<void> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking markNotificationAsReadFS.');
-    return;
-  }
   const notificationDoc = doc(db, 'notifications', id);
   await updateDoc(notificationDoc, { read: true });
 };
 
 export const markAllNotificationsAsReadFS = async (): Promise<void> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking markAllNotificationsAsReadFS.');
-    return;
-  }
   const q = query(collection(db, 'notifications'), where('read', '==', false));
   const querySnapshot = await getDocs(q);
   if (querySnapshot.empty) return;
@@ -817,10 +557,6 @@ export const markAllNotificationsAsReadFS = async (): Promise<void> => {
 };
 
 export const clearReadNotificationsFS = async (): Promise<void> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking clearReadNotificationsFS.');
-    return;
-  }
   const q = query(collection(db, 'notifications'), where('read', '==', true));
   const querySnapshot = await getDocs(q);
   if (querySnapshot.empty) return;
@@ -838,10 +574,6 @@ export const addClientNotificationFS = async (
   notificationData: Omit<ClientNotification, 'id' | 'createdAt' | 'read' | 'clientId'>,
   clientId: string
 ): Promise<void> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking addClientNotificationFS.');
-    return;
-  }
   const dataToSave = {
     ...notificationData,
     clientId,
@@ -854,10 +586,6 @@ export const addClientNotificationFS = async (
 export const addNotificationToAllClientsFS = async (
   notificationData: Omit<ClientNotification, 'id' | 'createdAt' | 'read' | 'clientId'>
 ): Promise<{ success: boolean; count: number; error?: string }> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking addNotificationToAllClientsFS.');
-    return { success: true, count: 0 };
-  }
   try {
     const clientsSnapshot = await getDocs(collection(db, 'clients'));
     if (clientsSnapshot.empty) {
@@ -885,15 +613,11 @@ export const addNotificationToAllClientsFS = async (
 };
 
 export const getClientNotificationsFS = async (clientId: string): Promise<ClientNotification[]> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking getClientNotificationsFS.');
-    return [];
-  }
   const q = query(collection(db, 'clientNotifications'), where('clientId', '==', clientId));
   const querySnapshot = await getDocs(q);
   const notifications = querySnapshot.docs.map((doc) => fromFirestore<ClientNotification>(doc));
 
-  // Sort manually to avoid composite index requirement on (clientId, createdAt)
+  // Sort manually to avoid composite index on (clientId, createdAt)
   notifications.sort((a, b) => {
     const timeA = a.createdAt ? new Date(a.createdAt as string).getTime() : 0;
     const timeB = b.createdAt ? new Date(b.createdAt as string).getTime() : 0;
@@ -904,19 +628,11 @@ export const getClientNotificationsFS = async (clientId: string): Promise<Client
 };
 
 export const markClientNotificationAsReadFS = async (id: string): Promise<void> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking markClientNotificationAsReadFS.');
-    return;
-  }
   const notificationDoc = doc(db, 'clientNotifications', id);
   await updateDoc(notificationDoc, { read: true });
 };
 
 export const clearReadClientNotificationsFS = async (clientId: string): Promise<void> => {
-  if (!db) {
-    console.warn('Firestore not initialized. Mocking clearReadClientNotificationsFS.');
-    return;
-  }
   // Query only by clientId to avoid composite index on (clientId, read)
   const q = query(collection(db, 'clientNotifications'), where('clientId', '==', clientId));
   const querySnapshot = await getDocs(q);
@@ -938,7 +654,53 @@ export const clearReadClientNotificationsFS = async (clientId: string): Promise<
 };
 
 
-// Keep Expense type for backward compatibility if needed, or gradually phase out.
-// For now, we'll focus on using FinancialTransaction.
-// export type Expense = FinancialTransaction & { type: 'expense' };
-// export type Income = FinancialTransaction & { type: 'income' };
+// ========== Messaging Functions ==========
+
+export const sendMessageFS = async (
+  conversationId: string, // This is the clientId
+  clientName: string,
+  text: string,
+  senderType: 'admin' | 'client'
+): Promise<void> => {
+  const batch = writeBatch(db);
+  const now = serverTimestamp();
+
+  // 1. Add new message to the messages subcollection
+  const messageRef = doc(collection(db, 'conversations', conversationId, 'messages'));
+  batch.set(messageRef, {
+    conversationId,
+    senderId: senderType === 'admin' ? 'admin' : conversationId,
+    senderType,
+    text,
+    createdAt: now,
+  });
+
+  // 2. Update/create the conversation document
+  const conversationRef = doc(db, 'conversations', conversationId);
+  batch.set(conversationRef, {
+    clientId: conversationId,
+    clientName,
+    lastMessage: text,
+    lastMessageTimestamp: now,
+    unreadByAdmin: senderType === 'client',
+    unreadByClient: senderType === 'admin',
+  }, { merge: true });
+
+  await batch.commit();
+};
+
+export const markConversationAsReadByAdminFS = async (conversationId: string): Promise<void> => {
+  const conversationRef = doc(db, 'conversations', conversationId);
+  await setDoc(conversationRef, { unreadByAdmin: false }, { merge: true })
+    .catch(error => {
+      console.error("Error marking conversation as read by admin:", error);
+  });
+};
+
+export const markConversationAsReadByClientFS = async (conversationId: string): Promise<void> => {
+  const conversationRef = doc(db, 'conversations', conversationId);
+  await setDoc(conversationRef, { unreadByClient: false }, { merge: true })
+    .catch(error => {
+      console.error("Error marking conversation as read by client:", error);
+  });
+};
