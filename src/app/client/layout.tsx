@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from "react";
@@ -6,11 +5,12 @@ import Link from "next/link";
 import { NailStudioLogo } from "@/components/icons/logo";
 import { Button } from "@/components/ui/button";
 import { ClientAuthProvider, useClientAuth } from "@/contexts/ClientAuthContext";
-import { LogOut, Loader2, Home, UserCircle, Bell } from "lucide-react";
+import { LogOut, Loader2, Home, UserCircle, MessageSquare } from "lucide-react"; // Import MessageSquare
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { useSettings } from "@/contexts/SettingsContext"; // Import global SettingsProvider
+import { useSettings } from "@/contexts/SettingsContext";
 import { ClientNotificationBell } from "@/components/client/notification-bell";
+import { ClientMessageBell } from "@/components/client/message-bell"; // Import new component
 
 // Define public paths for client area that do not require authentication
 const PUBLIC_CLIENT_PATHS = ['/client/login', '/client/register', '/client/forgot-password'];
@@ -57,10 +57,17 @@ function ClientAreaContent({ children }: { children: React.ReactNode }) {
                     <Home className="mr-1.5 h-4 w-4"/> Painel
                   </Button>
                </Link>
+               {/* NEW MESSAGES BUTTON */}
+               <Link href="/client/mensagens" passHref>
+                  <Button variant={pathname === "/client/mensagens" ? "secondary" : "ghost"} size="sm" className="font-body text-sm hidden sm:inline-flex items-center">
+                    <MessageSquare className="mr-1.5 h-4 w-4"/> Mensagens
+                  </Button>
+               </Link>
                <div className="flex items-center gap-1 text-sm text-muted-foreground font-body hidden md:flex">
                 <UserCircle className="h-4 w-4" />
                 <span>{clientDisplayName}</span>
                </div>
+               <ClientMessageBell /> {/* NEW BELL */}
                <ClientNotificationBell />
                <Button
                   variant="ghost"
