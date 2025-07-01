@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar"; // This is the main Calendar component
@@ -48,6 +49,7 @@ const appointmentFormSchema = z.object({
   endTime: z.string().min(1, { message: "Horário de término é obrigatório." }),
   status: z.enum(appointmentStatuses),
   discount: z.string().optional(),
+  discountJustification: z.string().optional(),
   totalAmount: z.string().optional(),
   paymentMethod: z.enum(paymentMethods as [PaymentMethod, ...PaymentMethod[]]).optional(),
 }).refine(data => {
@@ -58,6 +60,15 @@ const appointmentFormSchema = z.object({
 }, {
     message: "Horário de término deve ser após o horário de início.",
     path: ["endTime"],
+}).refine(data => {
+    const discountValue = parseFloat(String(data.discount || "0").replace(',', '.')) || 0;
+    if (discountValue > 0) {
+        return data.discountJustification && data.discountJustification.trim().length > 2;
+    }
+    return true;
+}, {
+    message: "Justificativa é obrigatória para descontos.",
+    path: ["discountJustification"],
 });
 
 type AppointmentFormValues = z.infer<typeof appointmentFormSchema>;
@@ -157,6 +168,7 @@ export default function AgendaPage() {
       endTime: "",
       status: "Agendado",
       discount: "0,00",
+      discountJustification: "",
       totalAmount: "0,00",
       paymentMethod: 'Não Pago',
     },
@@ -173,6 +185,7 @@ export default function AgendaPage() {
 
   const selectedServiceIdsFromForm = form.watch('serviceIds');
   const discountFromForm = form.watch('discount');
+  const discountValue = parseFloat(String(discountFromForm || '0').replace(',', '.')) || 0;
   const selectedClientNameFromForm = form.watch('clientName');
 
   React.useEffect(() => {
@@ -190,11 +203,10 @@ export default function AgendaPage() {
       });
     }
   
-    const discountValue = parseFloat(String(discountFromForm || "0").replace(',', '.')) || 0;
     const finalTotal = Math.max(0, subtotal - discountValue);
   
     form.setValue('totalAmount', finalTotal.toFixed(2).replace('.', ','), { shouldValidate: true, shouldDirty: true });
-  }, [selectedServiceIdsFromForm, discountFromForm, servicesList, form]);
+  }, [selectedServiceIdsFromForm, discountValue, servicesList, form]);
 
   React.useEffect(() => {
     if (!selectedClientNameFromForm || !selectedServiceIdsFromForm || selectedServiceIdsFromForm.length === 0 || clientsList.length === 0 || availablePackagesList.length === 0 || servicesList.length === 0) {
@@ -292,6 +304,7 @@ export default function AgendaPage() {
             endTime: "",
             status: "Agendado",
             discount: "0,00",
+            discountJustification: "",
             totalAmount: "0,00",
             paymentMethod: 'Não Pago',
         });
@@ -375,6 +388,7 @@ export default function AgendaPage() {
       endTime: "",
       status: "Agendado",
       discount: "0,00",
+      discountJustification: "",
       totalAmount: "0,00",
       paymentMethod: 'Não Pago',
     });
@@ -393,6 +407,7 @@ export default function AgendaPage() {
         endTime: apt.endTime,
         status: apt.status,
         discount: apt.discount?.replace('.', ',') || "0,00",
+        discountJustification: apt.discountJustification || "",
         totalAmount: apt.totalAmount?.replace('.', ',') || "0,00",
         paymentMethod: apt.paymentMethod || 'Não Pago',
     });
@@ -534,6 +549,7 @@ export default function AgendaPage() {
         professionalId: data.professionalId,
         status: data.status,
         discount: data.discount?.replace(',', '.') || "0.00",
+        discountJustification: data.discountJustification || "",
         totalAmount: data.totalAmount?.replace(',', '.') || "0.00",
         paymentMethod: data.paymentMethod || 'Não Pago',
       };
@@ -910,6 +926,27 @@ export default function AgendaPage() {
                           </p>
                       </div>
                     </div>
+
+                    {discountValue > 0 && (
+                      <FormField
+                        control={form.control}
+                        name="discountJustification"
+                        render={({ field }) => (
+                            <FormItem>
+                                <FormLabel className="font-body">Justificativa do Desconto</FormLabel>
+                                <FormControl>
+                                    <Textarea
+                                        placeholder="Ex: Presente de aniversário, pacote de fidelidade, etc."
+                                        className="focus:ring-accent font-body"
+                                        rows={2}
+                                        {...field}
+                                    />
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                        )}
+                      />
+                    )}
 
 
                     

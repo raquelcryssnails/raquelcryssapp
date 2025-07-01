@@ -3,7 +3,7 @@
 
 import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Settings, Clock, Bell, Users, UserPlus, Save, UserCog, Image as ImageIcon, Tv, Upload, FileUp } from "lucide-react";
+import { Settings, Clock, Bell, Users, UserPlus, Save, UserCog, Image as ImageIcon, Tv, Upload, FileUp, Database, Download, AlertTriangle, Loader2 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -25,10 +25,21 @@ import {
   DialogTrigger,
   DialogClose,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings, type DayOpeningHours } from "@/contexts/SettingsContext"; 
 import type { AppSettings } from "@/types/firestore";
+import { backupAllDataFS, restoreAllDataFS } from "@/lib/firebase/firestoreService";
 
 
 // Initial days data, now using dayOfWeek (0 for Sunday, 1 for Monday, etc.)
@@ -61,6 +72,12 @@ export default function ConfiguracoesPage() {
     salonPhone: contextSalonPhone,
     clientLoginTitle: contextClientLoginTitle,
     clientLoginDescription: contextClientLoginDescription,
+    stampValidityMessage: contextStampValidityMessage,
+    themeColor: contextThemeColor,
+    backgroundColor: contextBackgroundColor,
+    appleTouchIconUrl: contextAppleTouchIconUrl,
+    icon192Url: contextIcon192Url,
+    icon512Url: contextIcon512Url,
     setAppSettingsState, 
     isLoadingSettings 
   } = useSettings();
@@ -75,6 +92,12 @@ export default function ConfiguracoesPage() {
   const [editableSalonPhone, setEditableSalonPhone] = React.useState(contextSalonPhone);
   const [editableClientLoginTitle, setEditableClientLoginTitle] = React.useState(contextClientLoginTitle);
   const [editableClientLoginDescription, setEditableClientLoginDescription] = React.useState(contextClientLoginDescription);
+  const [editableStampValidityMessage, setEditableStampValidityMessage] = React.useState(contextStampValidityMessage);
+  const [editableThemeColor, setEditableThemeColor] = React.useState(contextThemeColor);
+  const [editableBackgroundColor, setEditableBackgroundColor] = React.useState(contextBackgroundColor);
+  const [editableAppleTouchIconUrl, setEditableAppleTouchIconUrl] = React.useState(contextAppleTouchIconUrl);
+  const [editableIcon192Url, setEditableIcon192Url] = React.useState(contextIcon192Url);
+  const [editableIcon512Url, setEditableIcon512Url] = React.useState(contextIcon512Url);
 
 
   const [localOpeningHours, setLocalOpeningHours] = React.useState<DayOpeningHours[]>(
@@ -85,6 +108,12 @@ export default function ConfiguracoesPage() {
   const [isInviteUserModalOpen, setIsInviteUserModalOpen] = React.useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = React.useState(false);
   const [inviteEmail, setInviteEmail] = React.useState("");
+  const [isBackupConfirmOpen, setIsBackupConfirmOpen] = React.useState(false);
+  
+  const [fileToRestore, setFileToRestore] = React.useState<File | null>(null);
+  const [isRestoreConfirmOpen, setIsRestoreConfirmOpen] = React.useState(false);
+  const [isRestoring, setIsRestoring] = React.useState(false);
+
 
   // Sync local editable states when context changes
   React.useEffect(() => { setEditableUserName(contextUserName); }, [contextUserName]);
@@ -96,6 +125,12 @@ export default function ConfiguracoesPage() {
   React.useEffect(() => { setEditableSalonPhone(contextSalonPhone); }, [contextSalonPhone]);
   React.useEffect(() => { setEditableClientLoginTitle(contextClientLoginTitle); }, [contextClientLoginTitle]);
   React.useEffect(() => { setEditableClientLoginDescription(contextClientLoginDescription); }, [contextClientLoginDescription]);
+  React.useEffect(() => { setEditableStampValidityMessage(contextStampValidityMessage); }, [contextStampValidityMessage]);
+  React.useEffect(() => { setEditableThemeColor(contextThemeColor); }, [contextThemeColor]);
+  React.useEffect(() => { setEditableBackgroundColor(contextBackgroundColor); }, [contextBackgroundColor]);
+  React.useEffect(() => { setEditableAppleTouchIconUrl(contextAppleTouchIconUrl); }, [contextAppleTouchIconUrl]);
+  React.useEffect(() => { setEditableIcon192Url(contextIcon192Url); }, [contextIcon192Url]);
+  React.useEffect(() => { setEditableIcon512Url(contextIcon512Url); }, [contextIcon512Url]);
   React.useEffect(() => {
     if (contextOpeningHours && contextOpeningHours.length > 0) {
       setLocalOpeningHours(contextOpeningHours);
@@ -140,6 +175,24 @@ export default function ConfiguracoesPage() {
     setIsImportModalOpen(false);
   };
 
+  const handleBackup = async () => {
+    try {
+        await backupAllDataFS();
+        toast({
+            title: "Backup Concluído",
+            description: "O arquivo de backup foi baixado com sucesso."
+        });
+    } catch (error) {
+        console.error("Backup failed:", error);
+        toast({
+            variant: "destructive",
+            title: "Falha no Backup",
+            description: "Não foi possível gerar o arquivo de backup."
+        });
+    }
+    setIsBackupConfirmOpen(false);
+  };
+
   const handleSaveAllSettings = () => {
     const settingsToSave: Partial<AppSettings> = {
       openingHours: localOpeningHours,
@@ -152,6 +205,12 @@ export default function ConfiguracoesPage() {
       salonPhone: editableSalonPhone,
       clientLoginTitle: editableClientLoginTitle,
       clientLoginDescription: editableClientLoginDescription,
+      stampValidityMessage: editableStampValidityMessage,
+      themeColor: editableThemeColor,
+      backgroundColor: editableBackgroundColor,
+      appleTouchIconUrl: editableAppleTouchIconUrl,
+      icon192Url: editableIcon192Url,
+      icon512Url: editableIcon512Url,
       // Theme is saved separately via its own context/handler
     };
 
@@ -168,6 +227,71 @@ export default function ConfiguracoesPage() {
       title: "Configurações Salvas!",
       description: "Todas as configurações foram atualizadas.",
     });
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      const file = event.target.files[0];
+      if (file.type === 'application/json') {
+        setFileToRestore(file);
+      } else {
+        toast({ variant: "destructive", title: "Arquivo Inválido", description: "Por favor, selecione um arquivo .json válido." });
+        setFileToRestore(null);
+        event.target.value = ''; // Reset file input
+      }
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!fileToRestore) return;
+    setIsRestoring(true);
+    setIsRestoreConfirmOpen(false);
+  
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const text = e.target?.result;
+        if (typeof text !== 'string') {
+          throw new Error("Não foi possível ler o arquivo.");
+        }
+        const backupData = JSON.parse(text);
+  
+        // Basic validation of the backup file structure
+        if (!backupData.clients || !backupData.appointments || !backupData.services) {
+           throw new Error("O arquivo de backup parece estar corrompido ou em formato incorreto.");
+        }
+        
+        const result = await restoreAllDataFS(backupData);
+  
+        if (result.success) {
+          toast({ 
+            title: "Restauração Concluída com Sucesso!", 
+            description: "O sistema foi restaurado. A página será recarregada para aplicar as mudanças.",
+            duration: 5000,
+          });
+          setTimeout(() => window.location.reload(), 3000); // Reload to reflect data everywhere
+        } else {
+          throw new Error(result.error || "Ocorreu um erro desconhecido durante a restauração.");
+        }
+  
+      } catch (error: any) {
+        console.error("Restore failed:", error);
+        toast({ variant: "destructive", title: "Falha na Restauração", description: error.message, duration: 8000 });
+      } finally {
+        setIsRestoring(false);
+        setFileToRestore(null);
+        // It's tricky to reset a file input programmatically, but this is a common approach
+        const fileInput = document.getElementById('json-restore-file') as HTMLInputElement;
+        if (fileInput) {
+            fileInput.value = '';
+        }
+      }
+    };
+    reader.onerror = () => {
+       toast({ variant: "destructive", title: "Erro de Leitura", description: "Não foi possível ler o arquivo selecionado." });
+       setIsRestoring(false);
+    }
+    reader.readAsText(fileToRestore);
   };
 
 
@@ -271,8 +395,56 @@ export default function ConfiguracoesPage() {
                   />
                    <p className="text-xs text-muted-foreground mt-1 font-body">Esta mensagem será usada no botão "Agendar Horário via WhatsApp" no portal do cliente.</p>
                 </div>
+                <div>
+                  <Label htmlFor="editableStampValidityMessage" className="font-body">Mensagem de Validade dos Selos (Programa de Fidelidade)</Label>
+                  <Textarea 
+                    id="editableStampValidityMessage" 
+                    value={editableStampValidityMessage} 
+                    onChange={(e) => setEditableStampValidityMessage(e.target.value)} 
+                    className="focus:ring-accent font-body" 
+                    placeholder="Ex: Seus mimos não são acumulativos. Use antes de completar o próximo cartão!" 
+                    rows={3}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1 font-body">Esta mensagem aparecerá na seção de fidelidade do portal do cliente.</p>
+                </div>
               </AccordionContent>
             </AccordionItem>
+            
+            <AccordionItem value="item-pwa">
+              <AccordionTrigger className="font-headline text-lg text-primary hover:no-underline">
+                <ImageIcon className="mr-2 h-5 w-5 text-accent" /> PWA e Ícones da Tela Inicial
+              </AccordionTrigger>
+              <AccordionContent className="space-y-4 pt-2">
+                <p className="font-body text-sm text-muted-foreground">Configure como seu app aparecerá quando instalado em um celular. Os caminhos dos ícones são relativos à pasta 'public', ex: /icons/icon-192.png</p>
+                
+                <div>
+                  <Label htmlFor="editableAppleTouchIconUrl" className="font-body">URL do Ícone para Apple (apple-touch-icon)</Label>
+                  <Input id="editableAppleTouchIconUrl" value={editableAppleTouchIconUrl} onChange={(e) => setEditableAppleTouchIconUrl(e.target.value)} className="focus:ring-accent font-body" placeholder="/apple-touch-icon.png" />
+                </div>
+
+                <div>
+                  <Label htmlFor="editableIcon192Url" className="font-body">URL do Ícone 192x192</Label>
+                  <Input id="editableIcon192Url" value={editableIcon192Url} onChange={(e) => setEditableIcon192Url(e.target.value)} className="focus:ring-accent font-body" placeholder="/android-chrome-192x192.png" />
+                </div>
+
+                <div>
+                  <Label htmlFor="editableIcon512Url" className="font-body">URL do Ícone 512x512</Label>
+                  <Input id="editableIcon512Url" value={editableIcon512Url} onChange={(e) => setEditableIcon512Url(e.target.value)} className="focus:ring-accent font-body" placeholder="/android-chrome-512x512.png" />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="editableThemeColor" className="font-body">Cor do Tema do Navegador</Label>
+                      <Input id="editableThemeColor" value={editableThemeColor} onChange={(e) => setEditableThemeColor(e.target.value)} className="focus:ring-accent font-body" placeholder="#E62E7B" />
+                    </div>
+                    <div>
+                      <Label htmlFor="editableBackgroundColor" className="font-body">Cor de Fundo da Splash Screen</Label>
+                      <Input id="editableBackgroundColor" value={editableBackgroundColor} onChange={(e) => setEditableBackgroundColor(e.target.value)} className="focus:ring-accent font-body" placeholder="#FFFFFF" />
+                    </div>
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+
 
             <AccordionItem value="item-2">
               <AccordionTrigger className="font-headline text-lg text-primary hover:no-underline">
@@ -401,7 +573,7 @@ export default function ConfiguracoesPage() {
             
             <AccordionItem value="item-5">
               <AccordionTrigger className="font-headline text-lg text-primary hover:no-underline">
-                <Upload className="mr-2 h-5 w-5 text-accent" /> Importação / Exportação
+                <Upload className="mr-2 h-5 w-5 text-accent" /> Importação de Dados
               </AccordionTrigger>
               <AccordionContent className="space-y-4 pt-2">
                  <p className="font-body text-sm text-muted-foreground">Importe seus dados de outras fontes para o NailStudio AI.</p>
@@ -447,6 +619,65 @@ export default function ConfiguracoesPage() {
               </AccordionContent>
             </AccordionItem>
 
+            <AccordionItem value="item-6">
+              <AccordionTrigger className="font-headline text-lg text-primary hover:no-underline">
+                <Database className="mr-2 h-5 w-5 text-accent" /> Backup Geral
+              </AccordionTrigger>
+              <AccordionContent className="space-y-4 pt-2">
+                 <p className="font-body text-sm text-muted-foreground">Crie uma cópia de segurança de todos os dados do seu sistema. O arquivo será salvo no seu computador em formato JSON.</p>
+                 <Card>
+                  <CardHeader>
+                    <CardTitle className="font-headline text-md">Backup Completo do Banco de Dados</CardTitle>
+                    <CardDescription className="font-body text-xs">
+                      Esta ação irá baixar todos os dados do seu salão, incluindo clientes, agendamentos, finanças e configurações. Guarde este arquivo em um local seguro.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                     <Button variant="outline" className="font-body border-accent text-accent hover:bg-accent/10" onClick={() => setIsBackupConfirmOpen(true)}>
+                        <Download className="mr-2 h-4 w-4" /> Iniciar Backup Geral
+                    </Button>
+                  </CardContent>
+                 </Card>
+              </AccordionContent>
+            </AccordionItem>
+
+            <AccordionItem value="item-7" className="border-b-0">
+              <AccordionTrigger className="font-headline text-lg text-destructive hover:no-underline">
+                <Database className="mr-2 h-5 w-5 text-destructive" /> Restaurar a partir de Backup
+              </AccordionTrigger>
+              <AccordionContent className="space-y-4 pt-2">
+                <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-destructive dark:text-red-300">
+                    <h4 className="font-bold font-body flex items-center gap-2"><AlertTriangle className="h-5 w-5"/> Ação Perigosa e Irreversível</h4>
+                    <p className="font-body text-sm mt-1">
+                        Restaurar um backup <strong className="font-bold">SUBSTITUIRÁ TODOS</strong> os dados atuais do sistema pelos dados do arquivo. Faça um backup dos dados atuais antes de continuar.
+                    </p>
+                </div>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="font-headline text-md">Restaurar a partir de arquivo</CardTitle>
+                    <CardDescription className="font-body text-xs">
+                      Selecione o arquivo de backup (.json) que você baixou anteriormente.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col sm:flex-row items-center gap-4">
+                     <div className="grid w-full max-w-sm items-center gap-1.5">
+                        <Label htmlFor="json-restore-file" className="font-body">Arquivo .json</Label>
+                        <Input id="json-restore-file" type="file" accept=".json" onChange={handleFileSelect} className="font-body file:text-primary file:font-semibold" disabled={isRestoring} />
+                     </div>
+                    <Button
+                        variant="destructive"
+                        className="w-full sm:w-auto mt-4 sm:mt-0"
+                        onClick={() => {if (fileToRestore) setIsRestoreConfirmOpen(true)}}
+                        disabled={!fileToRestore || isRestoring}
+                    >
+                        {isRestoring ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <Upload className="mr-2 h-4 w-4"/>}
+                        {isRestoring ? "Restaurando..." : "Iniciar Restauração"}
+                    </Button>
+                  </CardContent>
+                </Card>
+              </AccordionContent>
+            </AccordionItem>
+
           </Accordion>
 
           <div className="mt-8 pt-6 border-t">
@@ -456,6 +687,40 @@ export default function ConfiguracoesPage() {
           </div>
         </CardContent>
       </Card>
+      
+      <AlertDialog open={isBackupConfirmOpen} onOpenChange={setIsBackupConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-headline text-gradient">Confirmar Backup Geral</AlertDialogTitle>
+            <AlertDialogDescription className="font-body">
+              Tem certeza que deseja criar um backup completo de todos os dados do sistema?
+              O processo pode levar alguns instantes dependendo da quantidade de dados.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setIsBackupConfirmOpen(false)} className="font-body">Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBackup} className="bg-primary hover:bg-primary/90 font-body">Confirmar e Baixar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isRestoreConfirmOpen} onOpenChange={setIsRestoreConfirmOpen}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+            <AlertDialogTitle className="font-headline text-destructive flex items-center gap-2"><AlertTriangle/>Você tem CERTEZA ABSOLUTA?</AlertDialogTitle>
+            <AlertDialogDescription className="font-body space-y-2">
+                <p>Esta ação <strong className="text-destructive-foreground bg-destructive px-1 rounded-sm">DELETARÁ PERMANENTEMENTE</strong> todos os dados atuais (clientes, agendamentos, finanças, etc.) e os substituirá pelo conteúdo do arquivo de backup.</p>
+                <p><strong>Esta ação não pode ser desfeita.</strong></p>
+                <p>Recomendamos fortemente que você faça um backup dos dados atuais antes de prosseguir.</p>
+            </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setIsRestoreConfirmOpen(false)} className="font-body">Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRestore} className="bg-destructive hover:bg-destructive/90 font-body">Sim, entendo o risco. Restaurar.</AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }

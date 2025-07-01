@@ -112,6 +112,7 @@ export default function DashboardPage() {
           icon={CalendarCheck}
           description={isLoading ? "" : `${todaysAppointmentsListForMetric.filter(a => a.status === "Confirmado").length} confirmados`}
           iconClassName="text-primary"
+          href="/agenda-diaria"
         />
         <MetricCard
           title="Total de Clientes"
@@ -119,6 +120,7 @@ export default function DashboardPage() {
           icon={Users}
           description={isLoading ? "" : "Clientes cadastrados"}
           iconClassName="text-accent"
+          href="/clientes"
         />
         <MetricCard
           title="Faturamento do Mês"

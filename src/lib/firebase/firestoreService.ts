@@ -1,3 +1,4 @@
+
 import { db } from '@/lib/firebase/config';
 import type {
   Appointment,
@@ -31,6 +32,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
+import { parseISO, isValid } from 'date-fns';
 
 
 // Helper to convert Firestore doc to our data type
@@ -113,6 +115,13 @@ export const getAppSettingsFS = async (): Promise<AppSettings | null> => {
         salonPhone: data.salonPhone,
         clientLoginTitle: data.clientLoginTitle,
         clientLoginDescription: data.clientLoginDescription,
+        stampValidityMessage: data.stampValidityMessage,
+        theme: data.theme,
+        themeColor: data.themeColor,
+        backgroundColor: data.backgroundColor,
+        appleTouchIconUrl: data.appleTouchIconUrl,
+        icon192Url: data.icon192Url,
+        icon512Url: data.icon512Url,
       };
       // Convert Timestamp to ISO string for updatedAt
       if (data.updatedAt && data.updatedAt instanceof Timestamp) {
@@ -146,6 +155,13 @@ export const saveAppSettingsFS = async (settings: Partial<AppSettings>): Promise
     if (settings.hasOwnProperty('salonPhone')) dataToSave.salonPhone = settings.salonPhone;
     if (settings.hasOwnProperty('clientLoginTitle')) dataToSave.clientLoginTitle = settings.clientLoginTitle;
     if (settings.hasOwnProperty('clientLoginDescription')) dataToSave.clientLoginDescription = settings.clientLoginDescription;
+    if (settings.hasOwnProperty('stampValidityMessage')) dataToSave.stampValidityMessage = settings.stampValidityMessage;
+    if (settings.hasOwnProperty('theme')) dataToSave.theme = settings.theme;
+    if (settings.hasOwnProperty('themeColor')) dataToSave.themeColor = settings.themeColor;
+    if (settings.hasOwnProperty('backgroundColor')) dataToSave.backgroundColor = settings.backgroundColor;
+    if (settings.hasOwnProperty('appleTouchIconUrl')) dataToSave.appleTouchIconUrl = settings.appleTouchIconUrl;
+    if (settings.hasOwnProperty('icon192Url')) dataToSave.icon192Url = settings.icon192Url;
+    if (settings.hasOwnProperty('icon512Url')) dataToSave.icon512Url = settings.icon512Url;
 
 
     await setDoc(settingsDocRef, dataToSave, { merge: true });
@@ -691,16 +707,150 @@ export const sendMessageFS = async (
 
 export const markConversationAsReadByAdminFS = async (conversationId: string): Promise<void> => {
   const conversationRef = doc(db, 'conversations', conversationId);
-  await setDoc(conversationRef, { unreadByAdmin: false }, { merge: true })
-    .catch(error => {
-      console.error("Error marking conversation as read by admin:", error);
-  });
+  const docSnap = await getDoc(conversationRef);
+  if (docSnap.exists()) {
+    await updateDoc(conversationRef, { unreadByAdmin: false });
+  }
 };
 
 export const markConversationAsReadByClientFS = async (conversationId: string): Promise<void> => {
   const conversationRef = doc(db, 'conversations', conversationId);
-  await setDoc(conversationRef, { unreadByClient: false }, { merge: true })
-    .catch(error => {
-      console.error("Error marking conversation as read by client:", error);
-  });
+  const docSnap = await getDoc(conversationRef);
+  if (docSnap.exists()) {
+      await updateDoc(conversationRef, { unreadByClient: false });
+  }
+};
+
+// ========== Backup & Restore Functions ==========
+
+const collectionsToBackup = [
+    'clients', 'appointments', 'services', 'packages', 'professionals',
+    'products', 'financialTransactions', 'notifications', 'clientNotifications',
+    'conversations', 'appConfiguration', 'admins'
+];
+
+export const backupAllDataFS = async (): Promise<void> => {
+    console.log("Starting full data backup...");
+    const backupData: Record<string, any[]> = {};
+
+    for (const collectionName of collectionsToBackup) {
+        console.log(`Backing up collection: ${collectionName}`);
+        const collectionRef = collection(db, collectionName);
+        const querySnapshot = await getDocs(collectionRef);
+        
+        const collectionData = querySnapshot.docs.map(docSnap => fromFirestore(docSnap));
+
+        if (collectionName === 'conversations') {
+            for (const convo of collectionData) {
+                console.log(`Backing up messages for conversation: ${convo.id}`);
+                const messagesRef = collection(db, 'conversations', convo.id, 'messages');
+                const messagesSnapshot = await getDocs(messagesRef);
+                (convo as any).messages = messagesSnapshot.docs.map(msgSnap => fromFirestore(msgSnap));
+            }
+        }
+        
+        backupData[collectionName] = collectionData;
+        console.log(`Backed up ${collectionData.length} documents from ${collectionName}`);
+    }
+    
+    const jsonString = JSON.stringify(backupData, null, 2);
+    const blob = new Blob([jsonString], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    const timestamp = new Date().toISOString().replace(/:/g, '-').slice(0, 19);
+    a.download = `nailstudio-ai-backup-${timestamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    console.log("Backup process completed.");
+};
+
+
+const rehydrateDocWithTimestamps = (docData: any): any => {
+    const data = { ...docData };
+    if (data.createdAt && typeof data.createdAt === 'string' && isValid(parseISO(data.createdAt))) {
+        data.createdAt = Timestamp.fromDate(parseISO(data.createdAt));
+    }
+    if (data.updatedAt && typeof data.updatedAt === 'string' && isValid(parseISO(data.updatedAt))) {
+        data.updatedAt = Timestamp.fromDate(parseISO(data.updatedAt));
+    }
+    if (data.lastMessageTimestamp && typeof data.lastMessageTimestamp === 'string' && isValid(parseISO(data.lastMessageTimestamp))) {
+        data.lastMessageTimestamp = Timestamp.fromDate(parseISO(data.lastMessageTimestamp));
+    }
+    // Note: Other date fields like 'date', 'purchaseDate', 'expiryDate' are kept as strings.
+    return data;
+}
+
+export const restoreAllDataFS = async (backupData: Record<string, any[]>): Promise<{ success: boolean; error?: string }> => {
+    const collectionsToRestore = Object.keys(backupData);
+    const BATCH_SIZE = 499;
+
+    try {
+        for (const collectionName of collectionsToRestore) {
+            // Skip subcollections handled separately
+            if (collectionName.includes('/')) continue;
+
+            // 1. Clear the existing collection
+            console.log(`Clearing collection: ${collectionName}...`);
+            const existingDocsSnapshot = await getDocs(collection(db, collectionName));
+            if (!existingDocsSnapshot.empty) {
+                for (let i = 0; i < existingDocsSnapshot.docs.length; i += BATCH_SIZE) {
+                    const chunk = existingDocsSnapshot.docs.slice(i, i + BATCH_SIZE);
+                    const deleteBatch = writeBatch(db);
+                    chunk.forEach(doc => deleteBatch.delete(doc.ref));
+                    await deleteBatch.commit();
+                }
+            }
+            console.log(`Collection ${collectionName} cleared.`);
+
+            // 2. Restore the collection from backup data
+            console.log(`Restoring collection: ${collectionName}...`);
+            const documentsToRestore = backupData[collectionName];
+            if (documentsToRestore && documentsToRestore.length > 0) {
+                 for (let i = 0; i < documentsToRestore.length; i += BATCH_SIZE) {
+                    const chunk = documentsToRestore.slice(i, i + BATCH_SIZE);
+                    const restoreBatch = writeBatch(db);
+                    for (const docData of chunk) {
+                        const { id, messages, ...restOfData } = docData;
+                        if (!id) continue;
+                        const docRef = doc(db, collectionName, id);
+                        const hydratedData = rehydrateDocWithTimestamps(restOfData);
+                        restoreBatch.set(docRef, hydratedData);
+                    }
+                    await restoreBatch.commit();
+                 }
+                 console.log(`Restored ${documentsToRestore.length} documents to ${collectionName}.`);
+
+                // 3. Handle subcollections (special case for 'conversations')
+                if (collectionName === 'conversations') {
+                    for (const convoData of documentsToRestore) {
+                        if (convoData.id && convoData.messages && Array.isArray(convoData.messages) && convoData.messages.length > 0) {
+                            console.log(`Restoring messages for conversation ${convoData.id}...`);
+                            for (let i = 0; i < convoData.messages.length; i += BATCH_SIZE) {
+                                const msgChunk = convoData.messages.slice(i, i + BATCH_SIZE);
+                                const messagesBatch = writeBatch(db);
+                                for (const msgData of msgChunk) {
+                                    const { id: msgId, ...restOfMsgData } = msgData;
+                                    if (!msgId) continue;
+                                    const msgRef = doc(db, 'conversations', convoData.id, 'messages', msgId);
+                                    const hydratedMsgData = rehydrateDocWithTimestamps(restOfMsgData);
+                                    messagesBatch.set(msgRef, hydratedMsgData);
+                                }
+                                await messagesBatch.commit();
+                            }
+                            console.log(`Restored ${convoData.messages.length} messages for conversation ${convoData.id}.`);
+                        }
+                    }
+                }
+            }
+        }
+        return { success: true };
+    } catch (e: any) {
+        console.error("ERROR DURING BACKUP RESTORE:", e);
+        return { success: false, error: e.message || "An unknown error occurred during restore." };
+    }
 };

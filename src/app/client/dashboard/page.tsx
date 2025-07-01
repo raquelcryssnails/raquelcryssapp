@@ -73,7 +73,7 @@ export default function ClientDashboardPage() {
   const [servicesList, setServicesList] = React.useState<SalonService[]>([]);
   const [isLoadingAppointments, setIsLoadingAppointments] = React.useState(true);
   const [showAppointments, setShowAppointments] = React.useState(true); 
-  const { salonPhone, whatsappSchedulingMessage, salonName } = useSettings();
+  const { salonPhone, whatsappSchedulingMessage, salonName, stampValidityMessage } = useSettings();
 
   React.useEffect(() => {
     let isMounted = true;
@@ -248,7 +248,7 @@ export default function ClientDashboardPage() {
                                 <p className="font-body text-xs">Mimos Resgatados: <span className="font-medium">{mimosRedeemed}</span></p>
                                 <p className="font-body text-xs">Mimos Disponíveis: <span className="font-bold text-green-600">{mimosAvailableForClient}</span></p>
                                 <p className="font-body text-xs text-muted-foreground italic mt-2">
-                                    Atenção: Os mimos não são acumulativos! Use seu mimo disponível antes de completar o próximo cartão.
+                                  {stampValidityMessage || "Atenção: Os mimos não são acumulativos! Use seu mimo disponível antes de completar o próximo cartão."}
                                 </p>
                                 {mimosAvailableForClient > 0 && (
                                     <Button

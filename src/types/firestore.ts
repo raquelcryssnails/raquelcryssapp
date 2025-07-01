@@ -23,7 +23,13 @@ export interface AppSettings {
   salonPhone?: string; 
   clientLoginTitle?: string;
   clientLoginDescription?: string;
+  stampValidityMessage?: string;
   theme?: string;
+  themeColor?: string;
+  backgroundColor?: string;
+  icon192Url?: string;
+  icon512Url?: string;
+  appleTouchIconUrl?: string;
   updatedAt?: string | Timestamp; // Added to match getAppSettingsFS return
 }
 
@@ -84,6 +90,7 @@ export interface Appointment {
   professionalId: string;
   status: 'Agendado' | 'Confirmado' | 'Concluído' | 'Cancelado';
   discount?: string;
+  discountJustification?: string;
   totalAmount?: string; // Calculated total price, e.g., "120.50"
   paymentMethod?: PaymentMethod;
   createdAt?: string | Timestamp;

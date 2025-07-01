@@ -27,6 +27,12 @@ const DEFAULT_SALON_PHONE = "19996959490";
 const DEFAULT_THEME = "light";
 const DEFAULT_CLIENT_LOGIN_TITLE = "Portal do Cliente";
 const DEFAULT_CLIENT_LOGIN_DESCRIPTION = "Acesse para acompanhar seus selos de fidelidade e muito mais!";
+const DEFAULT_STAMP_VALIDITY_MESSAGE = "Atenção: Os mimos não são acumulativos! Use seu mimo disponível antes de completar o próximo cartão.";
+const DEFAULT_THEME_COLOR = "#E62E7B";
+const DEFAULT_BACKGROUND_COLOR = "#FFFFFF";
+const DEFAULT_APPLE_TOUCH_ICON_URL = "/apple-touch-icon.png";
+const DEFAULT_ICON_192_URL = "/android-chrome-192x192.png";
+const DEFAULT_ICON_512_URL = "/android-chrome-512x512.png";
 
 
 export interface SettingsContextType {
@@ -40,7 +46,13 @@ export interface SettingsContextType {
   salonPhone: string;
   clientLoginTitle: string;
   clientLoginDescription: string;
+  stampValidityMessage: string;
   theme: string;
+  themeColor: string;
+  backgroundColor: string;
+  appleTouchIconUrl: string;
+  icon192Url: string;
+  icon512Url: string;
   setAppSettingsState: (newSettings: Partial<AppSettings>) => void;
   isLoadingSettings: boolean;
 }
@@ -66,7 +78,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [salonPhone, setSalonPhoneInternal] = useState<string>(DEFAULT_SALON_PHONE);
   const [clientLoginTitle, setClientLoginTitleInternal] = useState<string>(DEFAULT_CLIENT_LOGIN_TITLE);
   const [clientLoginDescription, setClientLoginDescriptionInternal] = useState<string>(DEFAULT_CLIENT_LOGIN_DESCRIPTION);
+  const [stampValidityMessage, setStampValidityMessageInternal] = useState<string>(DEFAULT_STAMP_VALIDITY_MESSAGE);
   const [theme, setThemeInternal] = useState<string>(DEFAULT_THEME);
+  const [themeColor, setThemeColorInternal] = useState<string>(DEFAULT_THEME_COLOR);
+  const [backgroundColor, setBackgroundColorInternal] = useState<string>(DEFAULT_BACKGROUND_COLOR);
+  const [appleTouchIconUrl, setAppleTouchIconUrlInternal] = useState<string>(DEFAULT_APPLE_TOUCH_ICON_URL);
+  const [icon192Url, setIcon192UrlInternal] = useState<string>(DEFAULT_ICON_192_URL);
+  const [icon512Url, setIcon512UrlInternal] = useState<string>(DEFAULT_ICON_512_URL);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const { toast } = useToast();
 
@@ -103,7 +121,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         setField(setSalonPhoneInternal, appSettings?.salonPhone, DEFAULT_SALON_PHONE, 'salonPhone');
         setField(setClientLoginTitleInternal, appSettings?.clientLoginTitle, DEFAULT_CLIENT_LOGIN_TITLE, 'clientLoginTitle');
         setField(setClientLoginDescriptionInternal, appSettings?.clientLoginDescription, DEFAULT_CLIENT_LOGIN_DESCRIPTION, 'clientLoginDescription');
+        setField(setStampValidityMessageInternal, appSettings?.stampValidityMessage, DEFAULT_STAMP_VALIDITY_MESSAGE, 'stampValidityMessage');
         setField(setThemeInternal, appSettings?.theme, DEFAULT_THEME, 'theme');
+        setField(setThemeColorInternal, appSettings?.themeColor, DEFAULT_THEME_COLOR, 'themeColor');
+        setField(setBackgroundColorInternal, appSettings?.backgroundColor, DEFAULT_BACKGROUND_COLOR, 'backgroundColor');
+        setField(setAppleTouchIconUrlInternal, appSettings?.appleTouchIconUrl, DEFAULT_APPLE_TOUCH_ICON_URL, 'appleTouchIconUrl');
+        setField(setIcon192UrlInternal, appSettings?.icon192Url, DEFAULT_ICON_192_URL, 'icon192Url');
+        setField(setIcon512UrlInternal, appSettings?.icon512Url, DEFAULT_ICON_512_URL, 'icon512Url');
+
         
         if (defaultsUsed && Object.keys(settingsToSave).length > 0) {
           await saveAppSettingsFS(settingsToSave);
@@ -126,7 +151,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         setSalonPhoneInternal(DEFAULT_SALON_PHONE);
         setClientLoginTitleInternal(DEFAULT_CLIENT_LOGIN_TITLE);
         setClientLoginDescriptionInternal(DEFAULT_CLIENT_LOGIN_DESCRIPTION);
+        setStampValidityMessageInternal(DEFAULT_STAMP_VALIDITY_MESSAGE);
         setThemeInternal(DEFAULT_THEME);
+        setThemeColorInternal(DEFAULT_THEME_COLOR);
+        setBackgroundColorInternal(DEFAULT_BACKGROUND_COLOR);
+        setAppleTouchIconUrlInternal(DEFAULT_APPLE_TOUCH_ICON_URL);
+        setIcon192UrlInternal(DEFAULT_ICON_192_URL);
+        setIcon512UrlInternal(DEFAULT_ICON_512_URL);
+
       } finally {
         setIsLoadingSettings(false);
       }
@@ -145,7 +177,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     if (newSettings.hasOwnProperty('salonPhone')) setSalonPhoneInternal(newSettings.salonPhone ?? DEFAULT_SALON_PHONE);
     if (newSettings.hasOwnProperty('clientLoginTitle')) setClientLoginTitleInternal(newSettings.clientLoginTitle ?? DEFAULT_CLIENT_LOGIN_TITLE);
     if (newSettings.hasOwnProperty('clientLoginDescription')) setClientLoginDescriptionInternal(newSettings.clientLoginDescription ?? DEFAULT_CLIENT_LOGIN_DESCRIPTION);
+    if (newSettings.hasOwnProperty('stampValidityMessage')) setStampValidityMessageInternal(newSettings.stampValidityMessage ?? DEFAULT_STAMP_VALIDITY_MESSAGE);
     if (newSettings.hasOwnProperty('theme')) setThemeInternal(newSettings.theme ?? DEFAULT_THEME);
+    if (newSettings.hasOwnProperty('themeColor')) setThemeColorInternal(newSettings.themeColor ?? DEFAULT_THEME_COLOR);
+    if (newSettings.hasOwnProperty('backgroundColor')) setBackgroundColorInternal(newSettings.backgroundColor ?? DEFAULT_BACKGROUND_COLOR);
+    if (newSettings.hasOwnProperty('appleTouchIconUrl')) setAppleTouchIconUrlInternal(newSettings.appleTouchIconUrl ?? DEFAULT_APPLE_TOUCH_ICON_URL);
+    if (newSettings.hasOwnProperty('icon192Url')) setIcon192UrlInternal(newSettings.icon192Url ?? DEFAULT_ICON_192_URL);
+    if (newSettings.hasOwnProperty('icon512Url')) setIcon512UrlInternal(newSettings.icon512Url ?? DEFAULT_ICON_512_URL);
+
     
     try {
       await saveAppSettingsFS(newSettings);
@@ -172,7 +211,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         salonPhone,
         clientLoginTitle,
         clientLoginDescription,
+        stampValidityMessage,
         theme,
+        themeColor,
+        backgroundColor,
+        appleTouchIconUrl,
+        icon192Url,
+        icon512Url,
         setAppSettingsState, 
         isLoadingSettings 
       }}>
