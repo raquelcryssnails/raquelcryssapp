@@ -366,31 +366,11 @@ export default function AgendaPage() {
     setCurrentDisplayDate(startOfDay(new Date()));
   };
 
-  const timeToSlotIndex = React.useCallback((time: string): number => {
-    if (!time) return -1;
-    return timeSlots.indexOf(time);
-  }, [timeSlots]);
-
   const getAppointmentsForDay = React.useCallback((day: Date) => {
     return appointments.filter(
       (apt) => apt.date === format(day, "yyyy-MM-dd") && (selectedProfessional === "all" || apt.professionalId === selectedProfessional)
     );
   }, [appointments, selectedProfessional]);
-
-  const isSlotOverlappingAppointment = React.useCallback((_day: Date, slotTime: string, appointmentsOnDay: Appointment[]): boolean => {
-    const currentSlotStartIndex = timeToSlotIndex(slotTime);
-    if (currentSlotStartIndex === -1) return true;
-
-    for (const apt of appointmentsOnDay) {
-        const aptStartIndex = timeToSlotIndex(apt.startTime);
-        const aptEndIndex = timeToSlotIndex(apt.endTime);
-        if (aptStartIndex === -1 || aptEndIndex === -1) continue;
-        if (currentSlotStartIndex >= aptStartIndex && currentSlotStartIndex < aptEndIndex) {
-            return true;
-        }
-    }
-    return false;
-  }, [timeToSlotIndex]);
 
   const handleSlotClick = (date: Date, startTime: string) => {
     setEditingAppointment(null);
@@ -413,6 +393,59 @@ export default function AgendaPage() {
     });
     setIsAppointmentModalOpen(true);
   };
+
+  const handleGridClick = (event: React.MouseEvent<HTMLDivElement>, day: Date, appointmentsOnDay: Appointment[]) => {
+    if ((event.target as HTMLElement).closest('[data-appointment-card="true"]')) {
+        return;
+    }
+    const gridElement = event.currentTarget;
+    const rect = gridElement.getBoundingClientRect();
+    const clickY = event.clientY - rect.top;
+    const totalHeight = gridElement.offsetHeight;
+
+    if (totalHeight === 0) return;
+
+    const totalMinutesInGrid = timeSlots.length * 30;
+    const minutesFromGridTop = (clickY / totalHeight) * totalMinutesInGrid;
+
+    const [startHour, startMinute] = timeSlots[0].split(":").map(Number);
+    const gridStartTotalMinutes = startHour * 60 + startMinute;
+
+    const clickedTimeInMinutes = gridStartTotalMinutes + minutesFromGridTop;
+
+    const roundedMinutes = Math.round(clickedTimeInMinutes);
+    const finalHour = Math.floor(roundedMinutes / 60);
+    const finalMinute = roundedMinutes % 60;
+    
+    const newStartTime = `${String(finalHour).padStart(2, '0')}:${String(finalMinute).padStart(2, '0')}`;
+
+    const isOverlapping = appointmentsOnDay.some(apt => {
+        if (!apt.startTime || !apt.endTime) return false;
+        
+        const timeToMinutes = (timeStr: string) => {
+            const [h, m] = timeStr.split(':').map(Number);
+            return h * 60 + m;
+        }
+
+        const start = timeToMinutes(apt.startTime);
+        const end = timeToMinutes(apt.endTime);
+        const clicked = timeToMinutes(newStartTime);
+
+        return clicked >= start && clicked < end;
+    });
+
+    if (isOverlapping) {
+        toast({
+            variant: "default",
+            title: "Horário Ocupado",
+            description: "Você clicou sobre um agendamento existente. Clique em um espaço vazio.",
+        });
+        return;
+    }
+
+    handleSlotClick(day, newStartTime);
+  };
+
 
   const handleEditAppointment = (apt: Appointment) => {
     setEditingAppointment(apt);
@@ -1333,63 +1366,67 @@ export default function AgendaPage() {
                 </p>
               </div>
               <div
-                className="relative grid h-[calc(4rem_*_var(--time-slots-count))]"
+                className="relative grid h-[calc(4rem_*_var(--time-slots-count))] cursor-pointer group"
                 style={{ '--time-slots-count': timeSlots.length, gridTemplateRows: `repeat(${timeSlots.length}, 4rem)` } as React.CSSProperties}
+                onClick={(e) => handleGridClick(e, day, appointmentsOnThisDay)}
               >
                  {timeSlots.map((slot, slotIdx) => {
-                    let slotStyling = "relative border-b border-border/50 h-16";
-                    let showPlusButton = false;
+                    let slotStyling = "relative border-b border-border/50 h-16 transition-colors duration-150 group-hover:bg-primary/5";
+                    
+                    const timeToSlotMinutes = (time: string) => {
+                        const [h, m] = time.split(':').map(Number);
+                        return h * 60 + m;
+                    };
+                    
+                    if (isDayEffectivelyOpen && daySettings?.openTime && daySettings?.closeTime) {
+                        const slotMinutes = timeToSlotMinutes(slot);
+                        const openMinutes = timeToSlotMinutes(daySettings.openTime);
+                        const closeMinutes = timeToSlotMinutes(daySettings.closeTime);
+                        const isWithinOperatingHours = slotMinutes >= openMinutes && slotMinutes < closeMinutes;
 
-                    const isSlotOverlapping = isSlotOverlappingAppointment(day, slot, appointmentsOnThisDay);
-
-                    if (isDayEffectivelyOpen && daySettings) {
-                        const slotTimeIdx = timeToSlotIndex(slot);
-                        const openTimeIdx = timeToSlotIndex(daySettings.openTime);
-                        const closeTimeIdx = timeToSlotIndex(daySettings.closeTime);
-                        const isWithinOperatingHours = slotTimeIdx >= openTimeIdx && slotTimeIdx < closeTimeIdx;
-
-                        if (isWithinOperatingHours) {
-                            if (!isSlotOverlapping) {
-                                showPlusButton = true;
-                            }
-                        } else {
-                            slotStyling = cn(slotStyling, "bg-muted/20 dark:bg-white/5 opacity-50 cursor-not-allowed");
+                        if (!isWithinOperatingHours) {
+                            slotStyling = cn(slotStyling, "bg-muted/20 dark:bg-white/5 opacity-50");
                         }
                     } else if (!isDayEffectivelyOpen) {
-                        slotStyling = cn(slotStyling, "bg-red-50 dark:bg-red-900/20 opacity-60 cursor-not-allowed");
-                    } else {
-                         if (!isSlotOverlapping) {
-                           showPlusButton = true;
-                         }
+                        slotStyling = cn(slotStyling, "bg-red-50 dark:bg-red-900/20 opacity-60");
                     }
 
                     return (
                         <div key={`slot-${dayIndex}-${slotIdx}`} className={slotStyling}>
-                            {showPlusButton && (
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="absolute inset-0 m-auto h-8 w-8"
-                                    onClick={() => handleSlotClick(day, slot)}
-                                    aria-label={`Agendar para ${format(day, "dd/MM")} às ${slot}`}
-                                >
-                                    <PlusCircle className="h-5 w-5 text-green-600 dark:text-green-500" />
-                                </Button>
-                            )}
                         </div>
                     );
                  })}
                 {appointmentsOnThisDay.map(apt => {
-                  const startSlot = timeToSlotIndex(apt.startTime);
-                  const endSlot = timeToSlotIndex(apt.endTime);
+                  if (!apt.startTime || !apt.endTime || !timeSlots.length) return null;
 
-                  if (startSlot < 0 || startSlot >= timeSlots.length || endSlot <= startSlot) return null;
+                  const firstSlotTime = timeSlots[0];
+                  const [startHour, startMinute] = firstSlotTime.split(":").map(Number);
+                  if (isNaN(startHour) || isNaN(startMinute)) return null;
+                  const gridStartMinutes = startHour * 60 + startMinute;
+              
+                  const [aptStartHour, aptStartMinute] = apt.startTime.split(":").map(Number);
+                  const aptStartTotalMinutes = aptStartHour * 60 + aptStartMinute;
+              
+                  const [aptEndHour, aptEndMinute] = apt.endTime.split(":").map(Number);
+                  const aptEndTotalMinutes = aptEndHour * 60 + aptEndMinute;
+              
+                  if (isNaN(aptStartTotalMinutes) || isNaN(aptEndTotalMinutes) || aptEndTotalMinutes <= aptStartTotalMinutes) {
+                      return null; // Don't render invalid appointments
+                  }
+              
+                  const minutesFromGridStart = aptStartTotalMinutes - gridStartMinutes;
+                  const durationInMinutes = aptEndTotalMinutes - aptStartTotalMinutes;
+                  
+                  const slotHeightRem = 4; // Each 30-minute slot is 4rem high
+                  const remPerMinute = slotHeightRem / 30;
+                  
+                  const topRem = minutesFromGridStart * remPerMinute;
+                  // Ensure a minimum visible height for very short appointments
+                  const heightRem = Math.max(remPerMinute * 15, durationInMinutes * remPerMinute);
 
-                  const durationSlots = Math.max(0.5, endSlot - startSlot);
                   const aptStyle = statusStyles[apt.status];
                   const AptIcon = aptStyle.icon;
                   const professional = professionalsList.find(p => p.id === apt.professionalId);
-
 
                   const displayServiceName = apt.serviceIds.length > 0 && servicesList.find(s => s.id === apt.serviceIds[0])
                     ? servicesList.find(s => s.id === apt.serviceIds[0])!.name
@@ -1398,6 +1435,7 @@ export default function AgendaPage() {
                   return (
                     <div
                       key={apt.id}
+                      data-appointment-card="true"
                       className={cn(
                         "absolute w-[calc(100%-4px)] ml-[2px] p-2 rounded-md shadow text-xs font-body overflow-hidden border-l-4",
                         (apt.status === "Concluído" || apt.status === "Cancelado") ? "cursor-default" : "cursor-pointer",
@@ -1406,8 +1444,8 @@ export default function AgendaPage() {
                         aptStyle.borderColor
                       )}
                       style={{
-                        top: `calc(${startSlot} * 4rem)`,
-                        height: `calc(${durationSlots} * 4rem)`,
+                        top: `${topRem}rem`,
+                        height: `${heightRem}rem`,
                       }}
                       title={`${apt.clientName} - ${displayServiceName}\n${apt.startTime} - ${apt.endTime}${apt.totalAmount ? `\nValor: R$ ${apt.totalAmount.replace('.',',')}` : ''}\nStatus: ${apt.status}`}
                       onClick={() => handleEditAppointment(apt)}
