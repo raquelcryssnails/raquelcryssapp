@@ -91,6 +91,8 @@ export interface Appointment {
   status: 'Agendado' | 'Confirmado' | 'Concluído' | 'Cancelado';
   discount?: string;
   discountJustification?: string;
+  extraAmount?: string;
+  extraAmountJustification?: string;
   totalAmount?: string; // Calculated total price, e.g., "120.50"
   paymentMethod?: PaymentMethod;
   createdAt?: string | Timestamp;
