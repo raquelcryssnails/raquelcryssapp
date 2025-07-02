@@ -50,6 +50,8 @@ const appointmentFormSchema = z.object({
   status: z.enum(appointmentStatuses),
   discount: z.string().optional(),
   discountJustification: z.string().optional(),
+  extraAmount: z.string().optional(),
+  extraAmountJustification: z.string().optional(),
   totalAmount: z.string().optional(),
   paymentMethod: z.enum(paymentMethods as [PaymentMethod, ...PaymentMethod[]]).optional(),
 }).refine(data => {
@@ -69,6 +71,15 @@ const appointmentFormSchema = z.object({
 }, {
     message: "Justificativa é obrigatória para descontos.",
     path: ["discountJustification"],
+}).refine(data => {
+    const extraAmountValue = parseFloat(String(data.extraAmount || "0").replace(',', '.')) || 0;
+    if (extraAmountValue > 0) {
+        return data.extraAmountJustification && data.extraAmountJustification.trim().length > 2;
+    }
+    return true;
+}, {
+    message: "Justificativa é obrigatória para acréscimos.",
+    path: ["extraAmountJustification"],
 });
 
 type AppointmentFormValues = z.infer<typeof appointmentFormSchema>;
@@ -169,6 +180,8 @@ export default function AgendaPage() {
       status: "Agendado",
       discount: "0,00",
       discountJustification: "",
+      extraAmount: "0,00",
+      extraAmountJustification: "",
       totalAmount: "0,00",
       paymentMethod: 'Não Pago',
     },
@@ -185,7 +198,9 @@ export default function AgendaPage() {
 
   const selectedServiceIdsFromForm = form.watch('serviceIds');
   const discountFromForm = form.watch('discount');
+  const extraAmountFromForm = form.watch('extraAmount');
   const discountValue = parseFloat(String(discountFromForm || '0').replace(',', '.')) || 0;
+  const extraAmountValue = parseFloat(String(extraAmountFromForm || '0').replace(',', '.')) || 0;
   const selectedClientNameFromForm = form.watch('clientName');
 
   React.useEffect(() => {
@@ -203,10 +218,10 @@ export default function AgendaPage() {
       });
     }
   
-    const finalTotal = Math.max(0, subtotal - discountValue);
+    const finalTotal = Math.max(0, subtotal - discountValue + extraAmountValue);
   
     form.setValue('totalAmount', finalTotal.toFixed(2).replace('.', ','), { shouldValidate: true, shouldDirty: true });
-  }, [selectedServiceIdsFromForm, discountValue, servicesList, form]);
+  }, [selectedServiceIdsFromForm, discountValue, extraAmountValue, servicesList, form]);
 
   React.useEffect(() => {
     if (!selectedClientNameFromForm || !selectedServiceIdsFromForm || selectedServiceIdsFromForm.length === 0 || clientsList.length === 0 || availablePackagesList.length === 0 || servicesList.length === 0) {
@@ -305,6 +320,8 @@ export default function AgendaPage() {
             status: "Agendado",
             discount: "0,00",
             discountJustification: "",
+            extraAmount: "0,00",
+            extraAmountJustification: "",
             totalAmount: "0,00",
             paymentMethod: 'Não Pago',
         });
@@ -389,6 +406,8 @@ export default function AgendaPage() {
       status: "Agendado",
       discount: "0,00",
       discountJustification: "",
+      extraAmount: "0,00",
+      extraAmountJustification: "",
       totalAmount: "0,00",
       paymentMethod: 'Não Pago',
     });
@@ -408,6 +427,8 @@ export default function AgendaPage() {
         status: apt.status,
         discount: apt.discount?.replace('.', ',') || "0,00",
         discountJustification: apt.discountJustification || "",
+        extraAmount: apt.extraAmount?.replace('.', ',') || "0,00",
+        extraAmountJustification: apt.extraAmountJustification || "",
         totalAmount: apt.totalAmount?.replace('.', ',') || "0,00",
         paymentMethod: apt.paymentMethod || 'Não Pago',
     });
@@ -550,6 +571,8 @@ export default function AgendaPage() {
         status: data.status,
         discount: data.discount?.replace(',', '.') || "0.00",
         discountJustification: data.discountJustification || "",
+        extraAmount: data.extraAmount?.replace(',', '.') || "0.00",
+        extraAmountJustification: data.extraAmountJustification || "",
         totalAmount: data.totalAmount?.replace(',', '.') || "0.00",
         paymentMethod: data.paymentMethod || 'Não Pago',
       };
@@ -897,13 +920,31 @@ export default function AgendaPage() {
                             ))}
                         </div>
                     )}
-                    <div className="space-y-4 sm:space-y-0 sm:grid sm:grid-cols-2 sm:gap-4 items-end mt-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end mt-3">
                       <FormField
                           control={form.control}
                           name="discount"
                           render={({ field }) => (
                               <FormItem>
                               <FormLabel className="font-body">Desconto (R$)</FormLabel>
+                              <FormControl>
+                                  <Input
+                                  type="text"
+                                  placeholder="0,00"
+                                  {...field}
+                                  className="focus:ring-accent font-body"
+                                  />
+                              </FormControl>
+                              <FormMessage />
+                              </FormItem>
+                          )}
+                      />
+                      <FormField
+                          control={form.control}
+                          name="extraAmount"
+                          render={({ field }) => (
+                              <FormItem>
+                              <FormLabel className="font-body">Acréscimo (R$)</FormLabel>
                               <FormControl>
                                   <Input
                                   type="text"
@@ -948,6 +989,26 @@ export default function AgendaPage() {
                       />
                     )}
 
+                    {extraAmountValue > 0 && (
+                      <FormField
+                        control={form.control}
+                        name="extraAmountJustification"
+                        render={({ field }) => (
+                            <FormItem>
+                                <FormLabel className="font-body">Justificativa do Acréscimo</FormLabel>
+                                <FormControl>
+                                    <Textarea
+                                        placeholder="Ex: Material extra, serviço complexo, etc."
+                                        className="focus:ring-accent font-body"
+                                        rows={2}
+                                        {...field}
+                                    />
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                        )}
+                      />
+                    )}
 
                     
                       <FormField
