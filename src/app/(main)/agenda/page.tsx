@@ -2,9 +2,9 @@
 "use client";
 
 import * as React from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, PlusCircle, Users, Square, Columns3, View, Clock, CheckCircle2, XCircle, CalendarIcon as CalendarNavIcon, Edit3, Trash2, ChevronsUpDown, Award, CreditCard, Loader2, Coffee, AlertTriangle, Contact, Send, Check } from "lucide-react"; // Renamed CalendarIcon to CalendarNavIcon, added AlertTriangle and Send
+import { CalendarDays, ChevronLeft, ChevronRight, PlusCircle, Users, Square, Columns3, View, Clock, CheckCircle2, XCircle, CalendarIcon as CalendarNavIcon, Edit3, Trash2, ChevronsUpDown, Award, CreditCard, Loader2, Coffee, AlertTriangle, Contact, Send, Check, PackagePlus, Tag } from "lucide-react"; // Renamed CalendarIcon to CalendarNavIcon, added AlertTriangle and Send
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { addDays, format, startOfWeek, endOfWeek, eachDayOfInterval, subDays, isToday, parseISO, startOfDay, parse, isBefore, getDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -21,8 +21,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { addAppointmentFS, getAppointmentsFS, updateAppointmentFS, deleteAppointmentFS, getServicesFS, getClientsFS, updateClientFS, addClientFS, addFinancialTransactionFS, getPackagesFS, getProfessionalsFS, addNotificationFS } from "@/lib/firebase/firestoreService"; // Added getPackagesFS and getProfessionalsFS
-import type { Appointment, SalonService as Service, Client, SalonPackage, Professional, PaymentMethod } from "@/types/firestore"; // Added SalonPackage, Professional, and PaymentMethod
+import { addAppointmentFS, getAppointmentsFS, updateAppointmentFS, deleteAppointmentFS, getServicesFS, getClientsFS, updateClientFS, addClientFS, addFinancialTransactionFS, getPackagesFS, getProfessionalsFS, addNotificationFS, getClientFS } from "@/lib/firebase/firestoreService"; // Added getPackagesFS and getProfessionalsFS
+import type { Appointment, SalonService as Service, Client, SalonPackage, Professional, PaymentMethod, ClientPackageInstance } from "@/types/firestore"; // Added SalonPackage, Professional, and PaymentMethod
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription as ShadAlertDescription } from "@/components/ui/alert"; // Renamed to avoid conflict
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -117,6 +117,9 @@ export default function AgendaPage() {
   const [isClientComboboxOpen, setIsClientComboboxOpen] = React.useState(false);
   const [updatingAppointmentId, setUpdatingAppointmentId] = React.useState<string | null>(null);
   const [packageAlerts, setPackageAlerts] = React.useState<PackageAlert[]>([]);
+  const [packageToSellInModal, setPackageToSellInModal] = React.useState<string>("");
+  const [isSellingPackage, setIsSellingPackage] = React.useState(false);
+
 
   const [isNewClientModalOpen, setIsNewClientModalOpen] = React.useState(false);
   const [isCalendarPopoverOpen, setIsCalendarPopoverOpen] = React.useState(false); 
@@ -327,6 +330,7 @@ export default function AgendaPage() {
         });
         setEditingAppointment(null);
         setPackageAlerts([]); 
+        setPackageToSellInModal("");
     } else {
       // When modal opens, ensure professionalId in form is valid
       const currentProfId = form.getValues("professionalId");
@@ -630,6 +634,80 @@ export default function AgendaPage() {
       toast({ variant: "destructive", title: "Erro ao Salvar", description: "Não foi possível salvar o agendamento." });
     }
   };
+
+  const handleSellPackageFromModal = async () => {
+    const clientName = form.getValues('clientName');
+    const client = clientsList.find(c => c.name === clientName);
+
+    if (!client || !client.id || !packageToSellInModal) {
+      toast({ variant: "destructive", title: "Seleção Inválida", description: "Selecione um cliente e um pacote para vender." });
+      return;
+    }
+
+    const pkgDetails = availablePackagesList.find(p => p.id === packageToSellInModal);
+    if (!pkgDetails) {
+      toast({ variant: "destructive", title: "Pacote não encontrado", description: "O pacote selecionado não foi encontrado." });
+      return;
+    }
+
+    setIsSellingPackage(true);
+
+    const purchaseDate = new Date();
+    const expiryDate = addDays(purchaseDate, pkgDetails.validityDays || 90);
+    const purchaseDateFormatted = format(purchaseDate, "yyyy-MM-dd");
+
+    const newClientPackage: ClientPackageInstance = {
+      packageId: pkgDetails.id,
+      packageName: pkgDetails.name,
+      purchaseDate: purchaseDateFormatted,
+      expiryDate: format(expiryDate, "yyyy-MM-dd"),
+      services: pkgDetails.services.map(s => ({
+        serviceId: s.serviceId,
+        totalQuantity: s.quantity,
+        remainingQuantity: s.quantity,
+      })),
+      status: 'Ativo',
+      originalPrice: pkgDetails.originalPrice,
+      paidPrice: pkgDetails.price,
+    };
+
+    const updatedPurchasedPackages = [...(client.purchasedPackages || []), newClientPackage];
+
+    try {
+      await updateClientFS(client.id, { purchasedPackages: updatedPurchasedPackages });
+      
+      await addFinancialTransactionFS({
+        description: `Venda Pacote: ${pkgDetails.name} - Cliente: ${client.name}`,
+        amount: pkgDetails.price.replace(',', '.'),
+        date: purchaseDateFormatted,
+        category: "Venda de Pacote",
+        type: "income"
+      });
+      toast({ title: "Pacote Vendido!", description: `Pacote "${pkgDetails.name}" vendido para ${client.name}.` });
+
+      // Award stamp for package purchase
+      const currentStamps = client.stampsEarned || 0;
+      const newStampCount = currentStamps + 1;
+      await updateClientFS(client.id, { stampsEarned: newStampCount });
+      
+      const isCompletingCard = newStampCount > 0 && newStampCount % TOTAL_STAMPS_ON_CARD === 0;
+      let toastDescription = `+1 selo pela compra do pacote para ${client.name}.`;
+      if (isCompletingCard) {
+          toastDescription = `Parabéns ${client.name}! Você completou um cartão com a compra deste pacote!`;
+      }
+      toast({ title: "Selo Adicionado!", description: toastDescription });
+      
+      await fetchPageData(); // Refresh all data to reflect the new package
+      setPackageToSellInModal("");
+
+    } catch (error) {
+      console.error("Error selling package from modal:", error);
+      toast({ variant: "destructive", title: "Erro ao Vender Pacote", description: "Não foi possível adicionar o pacote ao cliente." });
+    } finally {
+      setIsSellingPackage(false);
+    }
+  };
+
 
   const onSubmitNewClient = async (data: NewClientFormValues) => {
     try {
@@ -939,6 +1017,41 @@ export default function AgendaPage() {
                         )}
                       />
                     
+                     {selectedClientNameFromForm && (
+                        <Card className="mt-4 border-dashed border-primary bg-muted/30">
+                          <CardHeader className="p-3">
+                            <CardTitle className="font-headline text-md text-primary flex items-center gap-2">
+                              <PackagePlus className="h-5 w-5" /> Vender Pacote para {selectedClientNameFromForm}
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="p-3 pt-0 flex items-end gap-2">
+                            <div className="flex-grow">
+                              <Label htmlFor="selectPackageToSell" className="font-body text-xs">Selecionar Pacote</Label>
+                              <Select value={packageToSellInModal} onValueChange={setPackageToSellInModal} disabled={isSellingPackage}>
+                                <SelectTrigger id="selectPackageToSell" className="focus:ring-accent font-body h-9">
+                                  <SelectValue placeholder="Escolha um pacote..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {availablePackagesList.filter(p => p.status === "Ativo").map(pkg => (
+                                    <SelectItem key={pkg.id} value={pkg.id} className="font-body">
+                                      {pkg.name} (R$ {pkg.price.replace('.', ',')})
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <Button
+                              type="button"
+                              onClick={handleSellPackageFromModal}
+                              disabled={!packageToSellInModal || isSellingPackage}
+                              className="bg-green-600 hover:bg-green-700 text-white font-body h-9"
+                            >
+                              {isSellingPackage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Tag className="h-4 w-4" />}
+                              <span className="ml-2 hidden sm:inline">{isSellingPackage ? "Vendendo..." : "Vender"}</span>
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      )}
 
 
                     {packageAlerts.length > 0 && (
