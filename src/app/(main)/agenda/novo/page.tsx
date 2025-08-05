@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from "react";
@@ -12,6 +11,7 @@ export default function NewAppointmentPage() {
   const dateParam = searchParams.get('date');
   const startTimeParam = searchParams.get('startTime');
   const professionalIdParam = searchParams.get('professionalId');
+  const clientNameParam = searchParams.get('clientName');
 
   const initialDate = dateParam ? new Date(dateParam) : startOfDay(new Date());
   // Adjust date to account for timezone issues when creating from string
@@ -23,6 +23,7 @@ export default function NewAppointmentPage() {
     date: correctedDate,
     startTime: startTimeParam || "",
     professionalId: professionalIdParam || "",
+    clientName: clientNameParam || "",
   };
 
   return (
