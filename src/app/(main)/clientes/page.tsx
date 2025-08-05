@@ -43,7 +43,9 @@ type ClientFormValues = z.infer<typeof clientFormSchema>;
 const recurringAppointmentSchema = z.object({
     serviceIds: z.array(z.string()).nonempty({ message: "Selecione pelo menos um serviço." }),
     professionalId: z.string().min(1, { message: "Selecione um profissional." }),
-    dayOfWeek: z.coerce.number().min(0).max(6),
+    frequency: z.enum(['weekly', 'biweekly'], { required_error: "Selecione a frequência." }),
+    dayOfWeek: z.coerce.number().min(0).max(6).optional(),
+    startDate: z.date({ required_error: "Data de início é obrigatória." }),
     startTime: z.string().min(1, { message: "Horário de início é obrigatório." }),
     endTime: z.string().min(1, { message: "Horário de término é obrigatório." }),
     endDate: z.date({ required_error: "Data final é obrigatória." }),
@@ -55,7 +57,16 @@ const recurringAppointmentSchema = z.object({
 }, {
     message: "Horário de término deve ser após o horário de início.",
     path: ["endTime"],
+}).refine(data => {
+    if (data.frequency === 'weekly') {
+        return data.dayOfWeek !== undefined && data.dayOfWeek !== null;
+    }
+    return true;
+}, {
+    message: "O dia da semana é obrigatório para frequência semanal.",
+    path: ["dayOfWeek"],
 });
+
 
 type RecurringAppointmentFormValues = z.infer<typeof recurringAppointmentSchema>;
 
@@ -141,7 +152,9 @@ export default function ClientesPage() {
       defaultValues: {
         serviceIds: [],
         professionalId: "",
-        dayOfWeek: 1, // Default to Monday
+        frequency: 'weekly',
+        dayOfWeek: 1, 
+        startDate: new Date(),
         startTime: "",
         endTime: "",
         endDate: addDays(new Date(), 90),
@@ -153,6 +166,7 @@ export default function ClientesPage() {
       defaultValues: { title: "", description: "", type: "info" },
   });
 
+  const recurringFrequency = recurringForm.watch("frequency");
 
   const fetchAllData = React.useCallback(async () => {
     setIsLoading(true);
@@ -198,7 +212,16 @@ export default function ClientesPage() {
         mimosRedeemed: editingClient.mimosRedeemed || 0,
         purchasedPackages: editingClient.purchasedPackages || [],
       });
-      recurringForm.reset();
+      recurringForm.reset({
+          serviceIds: [],
+          professionalId: "",
+          frequency: 'weekly',
+          dayOfWeek: 1,
+          startDate: new Date(),
+          startTime: "",
+          endTime: "",
+          endDate: addDays(new Date(), 90),
+      });
       notificationForm.reset();
       setSelectedPackageToSell("");
     } else {
@@ -557,51 +580,70 @@ export default function ClientesPage() {
   };
   
   const handleCreateRecurringAppointments = async (data: RecurringAppointmentFormValues) => {
-      if (!editingClient) {
-          toast({ variant: "destructive", title: "Cliente não selecionado."});
-          return;
-      }
-      setIsCreatingRecurring(true);
-      
-      const appointmentsToCreate: Omit<Appointment, 'id'|'createdAt'|'updatedAt'>[] = [];
-      const totalAmount = data.serviceIds.reduce((sum, sId) => {
-          const service = availableServices.find(s => s.id === sId);
-          return sum + (service ? parseFloat(service.price.replace(',', '.')) : 0);
-      }, 0).toFixed(2);
-      
-      const weeklyIntervals = eachWeekOfInterval({
-          start: startOfDay(new Date()),
-          end: data.endDate
-      }, { weekStartsOn: 1 });
-      
-      weeklyIntervals.forEach(weekStart => {
-          const targetDay = addDays(weekStart, (data.dayOfWeek - 1 + 7) % 7); // Adjust for week start
-          if (targetDay <= data.endDate && targetDay >= startOfDay(new Date())) {
-              appointmentsToCreate.push({
-                  clientName: editingClient.name,
-                  serviceIds: data.serviceIds,
-                  professionalId: data.professionalId,
-                  date: format(targetDay, "yyyy-MM-dd"),
-                  startTime: data.startTime,
-                  endTime: data.endTime,
-                  status: 'Agendado',
-                  totalAmount,
-              });
-          }
-      });
-      
-      try {
-          await Promise.all(appointmentsToCreate.map(apt => addAppointmentFS(apt)));
-          toast({ title: "Agendamentos Criados!", description: `${appointmentsToCreate.length} agendamentos recorrentes foram criados para ${editingClient.name}.` });
-          recurringForm.reset();
-          fetchAllData(); // To see new appointments in history
-      } catch (error) {
-          console.error("Error creating recurring appointments:", error);
-          toast({ variant: "destructive", title: "Erro ao criar agendamentos", description: "Não foi possível salvar os agendamentos recorrentes." });
-      } finally {
-          setIsCreatingRecurring(false);
-      }
+    if (!editingClient) {
+        toast({ variant: "destructive", title: "Cliente não selecionado."});
+        return;
+    }
+    setIsCreatingRecurring(true);
+    
+    const appointmentsToCreate: Omit<Appointment, 'id'|'createdAt'|'updatedAt'>[] = [];
+    const totalAmount = data.serviceIds.reduce((sum, sId) => {
+        const service = availableServices.find(s => s.id === sId);
+        return sum + (service ? parseFloat(service.price.replace(',', '.')) : 0);
+    }, 0).toFixed(2);
+    
+    let currentDate = startOfDay(data.startDate);
+
+    while (isBefore(currentDate, data.endDate) || currentDate.getTime() === data.endDate.getTime()) {
+        let shouldAdd = false;
+        
+        if (data.frequency === 'weekly') {
+            const currentDayOfWeek = currentDate.getDay(); // Sunday is 0
+            if (currentDayOfWeek === data.dayOfWeek) {
+                shouldAdd = true;
+            }
+        } else if (data.frequency === 'biweekly') {
+             // Biweekly logic needs to ensure it's on the right day of the week
+            const startDayOfWeek = data.startDate.getDay();
+            const currentDayOfWeek = currentDate.getDay();
+            if (currentDayOfWeek === startDayOfWeek) {
+                 // Check if it's been a multiple of 14 days
+                const diffDays = (currentDate.getTime() - data.startDate.getTime()) / (1000 * 3600 * 24);
+                if (Math.round(diffDays) % 14 === 0) {
+                    shouldAdd = true;
+                }
+            }
+        }
+
+        if (shouldAdd) {
+            appointmentsToCreate.push({
+                clientName: editingClient.name,
+                serviceIds: data.serviceIds,
+                professionalId: data.professionalId,
+                date: format(currentDate, "yyyy-MM-dd"),
+                startTime: data.startTime,
+                endTime: data.endTime,
+                status: 'Agendado',
+                totalAmount,
+            });
+        }
+        
+        currentDate = addDays(currentDate, 1);
+    }
+    
+    try {
+        await Promise.all(appointmentsToCreate.map(apt => addAppointmentFS(apt)));
+        toast({ title: "Agendamentos Criados!", description: `${appointmentsToCreate.length} agendamentos recorrentes foram criados para ${editingClient.name}.` });
+        recurringForm.reset();
+        fetchAllData(); // To see new appointments in history
+    } catch (error) {
+        console.error("Error creating recurring appointments:", error);
+        toast({ variant: "destructive", title: "Erro ao criar agendamentos", description: "Não foi possível salvar os agendamentos recorrentes." });
+    } finally {
+        setIsCreatingRecurring(false);
+    }
   };
+
 
   const handleUpdateAppointmentStatus = async (appointmentId: string, newStatus: Appointment["status"]) => {
     setUpdatingAppointmentId(appointmentId);
@@ -1156,7 +1198,7 @@ export default function ClientesPage() {
                                         <Repeat className="h-5 w-5"/> Agendamento Contínuo
                                     </CardTitle>
                                     <CardDescription className="font-body">
-                                        Crie agendamentos que se repetem toda semana para {editingClient.name}.
+                                        Crie agendamentos que se repetem para {editingClient.name}.
                                     </CardDescription>
                                 </CardHeader>
                                 <Form {...recurringForm}>
@@ -1210,12 +1252,44 @@ export default function ClientesPage() {
                                                 )}
                                             />
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                <FormField control={recurringForm.control} name="dayOfWeek" render={({ field }) => (
-                                                    <FormItem><FormLabel className="font-body">Dia da Semana</FormLabel>
-                                                        <Select onValueChange={field.onChange} defaultValue={String(field.value)}>
+                                                <FormField control={recurringForm.control} name="frequency" render={({ field }) => (
+                                                    <FormItem>
+                                                        <FormLabel className="font-body">Frequência</FormLabel>
+                                                        <Select onValueChange={field.onChange} defaultValue={field.value}>
                                                             <FormControl><SelectTrigger className="focus:ring-accent font-body"><SelectValue/></SelectTrigger></FormControl>
-                                                            <SelectContent>{weekDays.map(day => (<SelectItem key={day.value} value={String(day.value)} className="font-body">{day.label}</SelectItem>))}</SelectContent>
+                                                            <SelectContent>
+                                                                <SelectItem value="weekly" className="font-body">Semanal</SelectItem>
+                                                                <SelectItem value="biweekly" className="font-body">A cada 2 semanas</SelectItem>
+                                                            </SelectContent>
                                                         </Select>
+                                                        <FormMessage />
+                                                    </FormItem>
+                                                )}/>
+                                                {recurringFrequency === 'weekly' && (
+                                                    <FormField control={recurringForm.control} name="dayOfWeek" render={({ field }) => (
+                                                        <FormItem>
+                                                            <FormLabel className="font-body">Dia da Semana</FormLabel>
+                                                            <Select onValueChange={field.onChange} defaultValue={String(field.value)}>
+                                                                <FormControl><SelectTrigger className="focus:ring-accent font-body"><SelectValue/></SelectTrigger></FormControl>
+                                                                <SelectContent>{weekDays.map(day => (<SelectItem key={day.value} value={String(day.value)} className="font-body">{day.label}</SelectItem>))}</SelectContent>
+                                                            </Select>
+                                                            <FormMessage />
+                                                        </FormItem>
+                                                    )}/>
+                                                )}
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                <FormField control={recurringForm.control} name="startDate" render={({ field }) => (
+                                                    <FormItem className="flex flex-col"><FormLabel className="font-body">Data de Início</FormLabel>
+                                                    <Popover><PopoverTrigger asChild><FormControl>
+                                                        <Button variant={"outline"} className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}>
+                                                            {field.value ? format(field.value, "PPP", { locale: ptBR }) : <span>Escolha uma data</span>}
+                                                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                                                        </Button>
+                                                    </FormControl></PopoverTrigger>
+                                                    <PopoverContent className="w-auto p-0" align="start">
+                                                        <Calendar mode="single" selected={field.value} onSelect={field.onChange} initialFocus locale={ptBR}/>
+                                                    </PopoverContent></Popover>
                                                     <FormMessage />
                                                     </FormItem>
                                                 )}/>
