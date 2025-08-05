@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from "react";
@@ -26,6 +25,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { format, addDays, parseISO, eachWeekOfInterval, startOfDay, isBefore } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import Link from "next/link";
 
 
 const clientFormSchema = z.object({
@@ -840,19 +840,26 @@ export default function ClientesPage() {
                       </div>
                     </CardContent>
                     <CardFooter className="pt-4 border-t mt-auto">
-                      <div className="flex w-full justify-end gap-2">
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => handleOpenClientModal(client)} 
-                          title="Gerenciar Cliente" 
-                          className="font-body text-xs hover:bg-primary hover:text-primary-foreground hover:border-primary"
-                        >
-                          <Edit3 className="mr-1 h-3.5 w-3.5" /> Gerenciar
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => handleDeleteClient(client.id)} title="Remover Cliente" className="font-body text-xs text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/30">
-                          <Trash2 className="mr-1 h-3.5 w-3.5" /> Remover
-                        </Button>
+                      <div className="flex w-full justify-between items-center gap-2">
+                         <Button asChild variant="outline" size="sm" className="font-body text-xs hover:bg-accent/20">
+                            <Link href={`/agenda/novo?clientName=${encodeURIComponent(client.name)}`}>
+                                <CalendarIcon className="mr-1 h-3.5 w-3.5" /> Agendar
+                            </Link>
+                         </Button>
+                         <div className="flex gap-1">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              onClick={() => handleOpenClientModal(client)} 
+                              title="Gerenciar Cliente" 
+                              className="font-body text-xs hover:bg-primary hover:text-primary-foreground hover:border-primary"
+                            >
+                              <Edit3 className="mr-1 h-3.5 w-3.5" /> Gerenciar
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleDeleteClient(client.id)} title="Remover Cliente" className="font-body text-xs text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/30">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                         </div>
                       </div>
                     </CardFooter>
                   </Card>
@@ -875,13 +882,22 @@ export default function ClientesPage() {
         }}>
         <DialogContent className="sm:max-w-3xl bg-card p-0">
             <DialogHeader className="p-4 sm:p-6 pb-2">
-                <div className="flex justify-between items-center">
-                    <DialogTitle className="font-headline text-gradient text-2xl">{editingClient ? `Gerenciar Cliente: ${editingClient.name}` : "Adicionar Novo Cliente"}</DialogTitle>
-                     {!editingClient && isContactsApiSupported && (
-                        <Button type="button" variant="outline" size="sm" onClick={handleImportContact} className="font-body">
-                            <Contact className="mr-2 h-4 w-4" /> Importar Contato
+                <div className="flex justify-between items-start">
+                    <div>
+                        <DialogTitle className="font-headline text-gradient text-2xl">{editingClient ? `Gerenciar Cliente: ${editingClient.name}` : "Adicionar Novo Cliente"}</DialogTitle>
+                         {!editingClient && isContactsApiSupported && (
+                            <Button type="button" variant="outline" size="sm" onClick={handleImportContact} className="font-body mt-2">
+                                <Contact className="mr-2 h-4 w-4" /> Importar Contato
+                            </Button>
+                         )}
+                    </div>
+                     {editingClient && (
+                         <Button asChild variant="default" size="sm" className="font-body bg-gradient-to-r from-primary to-accent text-accent-foreground hover:opacity-90">
+                            <Link href={`/agenda/novo?clientName=${encodeURIComponent(editingClient.name)}`}>
+                                <CalendarIcon className="mr-2 h-4 w-4"/> Novo Agendamento
+                            </Link>
                         </Button>
-                     )}
+                    )}
                  </div>
             </DialogHeader>
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
